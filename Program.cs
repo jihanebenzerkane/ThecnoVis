@@ -1,37 +1,73 @@
 using Microsoft.EntityFrameworkCore;
 using TechnoVIS.Data;
+using TechnoVIS.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Register Services
 builder.Services.AddOpenApi();
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+});
+builder.Services.AddScoped<ScoringService>();
 
+
+// CORS configuration for local development
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+// Database configuration
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
     connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
 }
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    throw new InvalidOperationException("Connection string introuvable (appsettings:ConnectionStrings:DefaultConnection ou variable d'env DB_CONNECTION_STRING).");
-}
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
+if (!string.IsNullOrWhiteSpace(connectionString) && !connectionString.Contains("technovis.db"))
+{
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseSqlServer(connectionString));
+}
+else
+{
+    // SQLite local database provider for seamless local execution
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseSqlite("Data Source=technovis.db"));
+}
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Ensure SQLite database is created and seeded with initial records
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    dbContext.Database.EnsureCreated();
+}
+
+// HTTP Pipeline
+app.UseCors("AllowAll");
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// Serve wwwroot static assets (index.html, styles.css, app.js, fallback.js)
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+app.UseRouting();
 app.MapControllers();
 
-// Vérifie que l'API tourne et que la connexion DB est bien configurée (pas testée ici, juste câblée).
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+// Health Check Endpoint
+app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "TechnoVIS Maintenance API", time = DateTime.Now }));
 
 app.Run();

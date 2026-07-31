@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TechnoVIS — Planification & Suivi des Visites de Maintenance</title>
+  <meta name="description" content="Système ECS de planification et suivi des visites de maintenance industrielle.">
+  <link rel="stylesheet" href="styles.css">
+  <script src="fallback.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════════════════════════════════
+       SIDEBAR NAVIGATION
+  ═════════════════════════════════════════════ -->
+  <aside class="sidebar" id="sidebar">
+
+    <!-- Brand -->
+    <div class="sidebar-header">
+      <div class="brand-logo">TV</div>
+      <div>
+        <span class="brand-title">TechnoVIS</span>
+        <span class="brand-subtitle">Planification ECS</span>
+      </div>
+    </div>
+
+    <!-- Nav items -->
+    <nav class="sidebar-nav">
+
+      <a class="nav-item active" data-tab="dashboard">
+        <!-- Grid icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+        </svg>
+        Tableau de Bord
+      </a>
+
+      <a class="nav-item" data-tab="planning">
+        <!-- Calendar icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8"  y1="2" x2="8"  y2="6"/>
+          <line x1="3"  y1="10" x2="21" y2="10"/>
+        </svg>
+        Planification
+      </a>
+
+      <a class="nav-item" data-tab="equipements">
+        <!-- Activity icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Équipements & Scoring
+      </a>
+
+      <a class="nav-item" data-tab="clients">
+        <!-- Briefcase icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="2" y="7" width="20" height="14" rx="2"/>
+          <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+          <line x1="12" y1="12" x2="12" y2="12"/>
+        </svg>
+        Marchés & Clients
+      </a>
+
+      <a class="nav-item" data-tab="technicien">
+        <!-- Tool/wrench icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+        Mode Technicien
+      </a>
+
+    </nav>
+
+    <!-- Connection status -->
+    <div class="sidebar-footer">
+      <div class="status-indicator">
+        <span id="network-dot" class="dot-online"></span>
+        <span id="network-text">API Connectée</span>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ═══════════════════════════════════════════
+       MAIN CONTENT
+  ═════════════════════════════════════════════ -->
+  <div class="main-wrapper">
+
+    <!-- Top bar -->
+    <header class="top-header">
+      <div class="page-title-group">
+        <h1 id="header-page-title">Tableau de Bord</h1>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm" id="btn-refresh-data">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Actualiser
+        </button>
+        <button class="btn btn-primary" id="btn-open-modal-visite">
+          + Nouvelle Visite
+        </button>
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main class="content-area">
+
+      <!-- ══════════════════════════════════════
+           TAB 1 — TABLEAU DE BORD
+      ══════════════════════════════════════ -->
+      <section id="tab-dashboard" class="tab-view active">
+
+        <!-- KPI strip -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <span class="metric-label">Total Visites</span>
+            <span class="metric-value" id="kpi-total-visites">—</span>
+            <span class="metric-subtext">Toutes visites confondues</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Planifiées</span>
+            <span class="metric-value" id="kpi-visites-planifiees">—</span>
+            <span class="metric-subtext">Interventions à venir</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">En Retard</span>
+            <span class="metric-value danger" id="kpi-visites-retard">—</span>
+            <span class="metric-subtext">Interventions urgentes</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Équipements Critiques</span>
+            <span class="metric-value warning" id="kpi-equipements-critiques">—</span>
+            <span class="metric-subtext">Score de risque ≥ 70</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Taux de Conformité</span>
+            <span class="metric-value success" id="kpi-taux-conformite">—</span>
+            <span class="metric-subtext">Visites validées à temps</span>
+          </div>
+        </div>
+
+        <!-- Urgent interventions -->
+        <div class="section-panel">
+          <div class="panel-header">
+            <span class="panel-title">Alertes & Interventions Prioritaires</span>
+            <span class="badge badge-retard">Action requise</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Référence</th>
+                  <th>Équipement</th>
+                  <th>Site</th>
+                  <th>Date Prévue</th>
+                  <th>Priorité</th>
+                  <th>Statut</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="table-urgent-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════
+           TAB 2 — PLANIFICATION & CALENDRIER
+      ══════════════════════════════════════ -->
+      <section id="tab-planning" class="tab-view">
+
+        <div class="section-panel">
+          <div class="panel-header">
+            <span class="panel-title" id="calendar-month-label">Août 2026</span>
+            <div class="header-actions">
+              <button class="btn btn-secondary btn-sm" id="cal-prev">← Préc.</button>
+              <button class="btn btn-secondary btn-sm" id="cal-today">Aujourd'hui</button>
+              <button class="btn btn-secondary btn-sm" id="cal-next">Suiv. →</button>
+            </div>
+          </div>
+          <div style="padding: 20px;">
+            <div class="calendar-grid" id="calendar-grid"></div>
+          </div>
+        </div>
+
+        <div class="section-panel">
+          <div class="panel-header">
+            <span class="panel-title">Planning des Visites</span>
+            <select class="form-control" id="filter-statut-visite" style="width:auto; padding:7px 12px; font-size:0.8rem;">
+              <option value="">Tous les statuts</option>
+              <option value="Planifiée">Planifiée</option>
+              <option value="En retard">En retard</option>
+              <option value="Validée">Validée</option>
+            </select>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Référence</th>
+                  <th>Type</th>
+                  <th>Équipement</th>
+                  <th>Client / Site</th>
+                  <th>Technicien</th>
+                  <th>Date Prévue</th>
+                  <th>Priorité</th>
+                  <th>Statut</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="table-planning-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════
+           TAB 3 — ÉQUIPEMENTS & SCORING
+      ══════════════════════════════════════ -->
+      <section id="tab-equipements" class="tab-view">
+
+        <div class="section-panel">
+          <div class="panel-header">
+            <span class="panel-title">Parc d'Équipements — Scoring Risque MTBF</span>
+            <button class="btn btn-primary btn-sm" id="btn-open-modal-equipement">+ Ajouter</button>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>N° Série</th>
+                  <th>Équipement</th>
+                  <th>Catégorie</th>
+                  <th>Client / Site</th>
+                  <th>Santé</th>
+                  <th>Score Risque</th>
+                  <th>Statut</th>
+                  <th>Dernière Visite</th>
+                </tr>
+              </thead>
+              <tbody id="table-equipements-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════
+           TAB 4 — MARCHÉS & CLIENTS
+      ══════════════════════════════════════ -->
+      <section id="tab-clients" class="tab-view">
+
+        <div class="section-panel">
+          <div class="panel-header">
+            <span class="panel-title">Contrats de Maintenance (Marchés)</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>N° Marché</th>
+                  <th>Libellé</th>
+                  <th>Client</th>
+                  <th>Période</th>
+                  <th>SLA Réponse</th>
+                  <th>Avancement</th>
+                  <th>Statut</th>
+                </tr>
+              </thead>
+              <tbody id="table-marches-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="section-panel">
+          <div class="panel-header">
+            <span class="panel-title">Répertoire Clients</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Société</th>
+                  <th>Contact</th>
+                  <th>Email</th>
+                  <th>Téléphone</th>
+                  <th>Sites</th>
+                </tr>
+              </thead>
+              <tbody id="table-clients-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════
+           TAB 5 — MODE TECHNICIEN
+      ══════════════════════════════════════ -->
+      <section id="tab-technicien" class="tab-view">
+
+        <div class="section-panel">
+          <div class="panel-header">
+            <span class="panel-title">Mes Interventions — Mode Terrain</span>
+            <span class="badge badge-planifiee">Amine El Amrani</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Référence</th>
+                  <th>Type</th>
+                  <th>Équipement</th>
+                  <th>Site</th>
+                  <th>Date</th>
+                  <th>Statut</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="table-technicien-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+  </div><!-- /.main-wrapper -->
+</div><!-- /#app -->
+
+<!-- ═══════════════════════════════════════════
+     MODAL — Nouvelle Visite
+═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-visite">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Planifier une Nouvelle Visite</h3>
+      <button class="close-modal" id="close-modal-visite">✕</button>
+    </div>
+    <form id="form-new-visite">
+      <div class="form-group">
+        <label for="form-visite-equipement">Équipement</label>
+        <select class="form-control" id="form-visite-equipement" required></select>
+      </div>
+      <div class="form-group">
+        <label for="form-visite-type">Type de Visite</label>
+        <select class="form-control" id="form-visite-type" required>
+          <option value="Préventive">Visite Préventive</option>
+          <option value="Curative">Intervention Curative</option>
+          <option value="Audit">Audit Technique</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="form-visite-technicien">Technicien Assigné</label>
+        <input type="text" class="form-control" id="form-visite-technicien" value="Amine El Amrani" required>
+      </div>
+      <div class="form-group">
+        <label for="form-visite-date">Date & Heure Prévues</label>
+        <input type="datetime-local" class="form-control" id="form-visite-date" required>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-visite">Annuler</button>
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     MODAL — Fiche Technicien / Rapport
+═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-rapport">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Fiche de Visite</h3>
+      <button class="close-modal" id="close-modal-rapport">✕</button>
+    </div>
+    <form id="form-rapport-technique">
+      <input type="hidden" id="form-rapport-id">
+      <div class="form-group">
+        <label for="form-rapport-statut">Statut d'intervention</label>
+        <select class="form-control" id="form-rapport-statut" required>
+          <option value="Validée">Visite Validée — Terminée</option>
+          <option value="En retard">En attente / Suspendue</option>
+          <option value="Planifiée">Replanifiée</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="form-rapport-texte">Rapport d'inspection</label>
+        <textarea class="form-control" id="form-rapport-texte" rows="3" placeholder="Points de contrôle effectués..."></textarea>
+      </div>
+      <div class="form-group">
+        <label for="form-rapport-actions">Actions correctives</label>
+        <textarea class="form-control" id="form-rapport-actions" rows="2" placeholder="Pièces remplacées, réglages..."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-rapport">Fermer</button>
+        <button type="submit" class="btn btn-primary">Valider la Fiche</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Toast notifications -->
+<div id="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
