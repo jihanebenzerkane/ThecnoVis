@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TechnoVIS.Data;
 using TechnoVIS.Models;
 using TechnoVIS.Services;
@@ -15,11 +16,13 @@ namespace TechnoVIS.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ScoringService _scoringService;
+        private readonly ILogger<VisitesController> _logger;
 
-        public VisitesController(AppDbContext context, ScoringService scoringService)
+        public VisitesController(AppDbContext context, ScoringService scoringService, ILogger<VisitesController> logger)
         {
             _context = context;
             _scoringService = scoringService;
+            _logger = logger;
         }
 
         [HttpGet]
@@ -115,9 +118,38 @@ namespace TechnoVIS.Controllers
             {
                 visite.ActionsCorrectives = update.ActionsCorrectives;
             }
+
             if (update.Statut == "Validée")
             {
-                visite.DateRealisee = DateTime.Now;
+                var dateRealisee = DateTime.Now;
+                visite.DateRealisee = dateRealisee;
+
+                var equipement = await _context.Equipements
+                    .Include(e => e.Site)
+                    .FirstOrDefaultAsync(e => e.Id == visite.EquipementId);
+
+                if (equipement != null && equipement.Site != null)
+                {
+                    equipement.DerniereVisite = dateRealisee;
+
+                    var activeMarche = await _context.Marches
+                        .Where(m => m.ClientId == equipement.Site.ClientId && m.Statut == "Actif")
+                        .OrderByDescending(m => m.DateFin)
+                        .FirstOrDefaultAsync();
+
+                    if (activeMarche != null && activeMarche.VisitesAnnuellesPrevues > 0)
+                    {
+                        int intervalleJours = 365 / activeMarche.VisitesAnnuellesPrevues;
+                        equipement.ProchaineVisitePrevue = dateRealisee.AddDays(intervalleJours);
+                        activeMarche.VisitesRealisees += 1;
+                        _logger.LogInformation("Prochaine visite pour l'équipement {EquipementId} recalculée au {ProchaineDate} (intervalle: {Intervalle} jours).",
+                            equipement.Id, equipement.ProchaineVisitePrevue, intervalleJours);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Impossible de recalculer ProchaineVisitePrevue pour l'équipement {EquipementId} : aucun marché actif ou VisitesAnnuellesPrevues <= 0.", equipement.Id);
+                    }
+                }
             }
 
             await _context.SaveChangesAsync();

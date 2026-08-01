@@ -36,26 +36,14 @@ namespace TechnoVIS.Controllers
             return Ok(clients);
         }
 
-        [HttpGet("/api/marches")]
-        public async Task<IActionResult> GetMarches()
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
         {
-            var marches = await _context.Marches
-                .Select(m => new
-                {
-                    m.Id,
-                    m.CodeMarche,
-                    m.Libelle,
-                    m.ClientId,
-                    ClientNom = m.Client != null ? m.Client.NomSociete : "N/A",
-                    m.DateDebut,
-                    m.DateFin,
-                    m.SlaHeures,
-                    m.VisitesAnnuellesPrevues,
-                    m.VisitesRealisees,
-                    m.Statut
-                })
-                .ToListAsync();
-            return Ok(marches);
+            var client = await _context.Clients
+                .Include(c => c.Sites)
+                .FirstOrDefaultAsync(c => c.Id == id);
+            if (client == null) return NotFound();
+            return Ok(client);
         }
     }
 }

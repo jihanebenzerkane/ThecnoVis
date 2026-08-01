@@ -262,6 +262,7 @@
         <div class="section-panel">
           <div class="panel-header">
             <span class="panel-title">Contrats de Maintenance (Marchés)</span>
+            <button class="btn btn-primary btn-sm" id="btn-open-modal-marche">+ Ajouter Marché</button>
           </div>
           <div class="table-responsive">
             <table class="data-table">
@@ -406,6 +407,127 @@
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" id="btn-cancel-rapport">Fermer</button>
         <button type="submit" class="btn btn-primary">Valider la Fiche</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     MODAL — Nouveau Marché
+═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-marche">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Créer un Nouveau Marché</h3>
+      <button class="close-modal" id="close-modal-marche">✕</button>
+    </div>
+    <form id="form-new-marche">
+      <div class="form-group">
+        <label for="form-marche-code">Code Marché</label>
+        <input type="text" class="form-control" id="form-marche-code" placeholder="ex: MAR-2026-150 (généré si vide)">
+      </div>
+      <div class="form-group">
+        <label for="form-marche-libelle">Libelle du Marché</label>
+        <input type="text" class="form-control" id="form-marche-libelle" placeholder="ex: Maintenance HVAC & TGBT" required>
+      </div>
+      <div class="form-group">
+        <label for="form-marche-client">Client</label>
+        <select class="form-control" id="form-marche-client" required></select>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <div class="form-group" style="flex:1;">
+          <label for="form-marche-datedebut">Date Début</label>
+          <input type="date" class="form-control" id="form-marche-datedebut" required>
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label for="form-marche-datefin">Date Fin</label>
+          <input type="date" class="form-control" id="form-marche-datefin" required>
+        </div>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <div class="form-group" style="flex:1;">
+          <label for="form-marche-sla">SLA (Heures)</label>
+          <input type="number" class="form-control" id="form-marche-sla" value="24" min="1" required>
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label for="form-marche-visites">Visites/An</label>
+          <input type="number" class="form-control" id="form-marche-visites" value="12" min="1" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="form-marche-statut">Statut</label>
+        <select class="form-control" id="form-marche-statut">
+          <option value="Actif">Actif</option>
+          <option value="En Renouvellement">En Renouvellement</option>
+          <option value="Expiré">Expiré</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-marche">Annuler</button>
+        <button type="submit" class="btn btn-primary">Créer le Marché</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     MODAL — Nouvel Équipement
+═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-equipement">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Ajouter un Équipement</h3>
+      <button class="close-modal" id="close-modal-equipement">✕</button>
+    </div>
+    <form id="form-new-equipement">
+      <div class="form-group">
+        <label for="form-equipement-nom">Nom de l'Équipement</label>
+        <input type="text" class="form-control" id="form-equipement-nom" placeholder="ex: Groupe Froid Daikin 500kW" required>
+      </div>
+      <div class="form-group">
+        <label for="form-equipement-serial">N° de Série</label>
+        <input type="text" class="form-control" id="form-equipement-serial" placeholder="ex: EQ-HVAC-999 (généré si vide)">
+      </div>
+      <div class="form-group">
+        <label for="form-equipement-categorie">Catégorie</label>
+        <select class="form-control" id="form-equipement-categorie" required>
+          <option value="HVAC">HVAC</option>
+          <option value="Groupe Électrogène">Groupe Électrogène</option>
+          <option value="Transformateur">Transformateur</option>
+          <option value="Compresseur">Compresseur</option>
+          <option value="TGBT">TGBT</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="form-equipement-site">Site / Client</label>
+        <select class="form-control" id="form-equipement-site" required></select>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <div class="form-group" style="flex:1;">
+          <label for="form-equipement-criticite">Criticité (1 à 5)</label>
+          <input type="number" class="form-control" id="form-equipement-criticite" min="1" max="5" value="3" required>
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label for="form-equipement-sante">Score Santé (%)</label>
+          <input type="number" class="form-control" id="form-equipement-sante" min="0" max="100" value="85" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="form-equipement-date">Date d'Installation</label>
+        <input type="date" class="form-control" id="form-equipement-date" required>
+      </div>
+      <div class="form-group">
+        <label for="form-equipement-statut">Statut</label>
+        <select class="form-control" id="form-equipement-statut">
+          <option value="Opérationnel">Opérationnel</option>
+          <option value="Maintenance Requise">Maintenance Requise</option>
+          <option value="En Révision">En Révision</option>
+          <option value="En Panne">En Panne</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-equipement">Annuler</button>
+        <button type="submit" class="btn btn-primary">Ajouter l'Équipement</button>
       </div>
     </form>
   </div>

@@ -108,8 +108,10 @@ const App = {
     }
     this.state.marches = marchesData || [];
 
-    // Population du dropdown des équipements pour le formulaire de visite
+    // Population des dropdowns pour les formulaires
     this.populateEquipementDropdown();
+    this.populateClientDropdown();
+    this.populateSiteDropdown();
 
     // Rendu des composants de la vue courante
     this.renderCurrentTab();
@@ -133,9 +135,15 @@ const App = {
       this.showToast("Données actualisées depuis l'API.");
     });
 
-    // Bouton d'ouverture modale Nouvelle Visite
+    // Boutons d'ouverture des modales
     document.getElementById("btn-open-modal-visite")?.addEventListener("click", () => {
       this.openModal("modal-visite");
+    });
+    document.getElementById("btn-open-modal-marche")?.addEventListener("click", () => {
+      this.openModal("modal-marche");
+    });
+    document.getElementById("btn-open-modal-equipement")?.addEventListener("click", () => {
+      this.openModal("modal-equipement");
     });
 
     // Fermeture des modales
@@ -143,12 +151,16 @@ const App = {
     document.getElementById("btn-cancel-visite")?.addEventListener("click", () => this.closeModal("modal-visite"));
     document.getElementById("close-modal-rapport")?.addEventListener("click", () => this.closeModal("modal-rapport"));
     document.getElementById("btn-cancel-rapport")?.addEventListener("click", () => this.closeModal("modal-rapport"));
+    document.getElementById("close-modal-marche")?.addEventListener("click", () => this.closeModal("modal-marche"));
+    document.getElementById("btn-cancel-marche")?.addEventListener("click", () => this.closeModal("modal-marche"));
+    document.getElementById("close-modal-equipement")?.addEventListener("click", () => this.closeModal("modal-equipement"));
+    document.getElementById("btn-cancel-equipement")?.addEventListener("click", () => this.closeModal("modal-equipement"));
 
-    // Formulaire de création de visite
+    // Formulaires
     document.getElementById("form-new-visite")?.addEventListener("submit", (e) => this.handleCreateVisite(e));
-
-    // Formulaire de validation de rapport technicien
     document.getElementById("form-rapport-technique")?.addEventListener("submit", (e) => this.handleUpdateRapport(e));
+    document.getElementById("form-new-marche")?.addEventListener("submit", (e) => this.handleCreateMarche(e));
+    document.getElementById("form-new-equipement")?.addEventListener("submit", (e) => this.handleCreateEquipement(e));
 
     // Contrôles du calendrier
     document.getElementById("cal-prev")?.addEventListener("click", () => {
@@ -479,6 +491,33 @@ const App = {
     });
   },
 
+  populateClientDropdown() {
+    const select = document.getElementById("form-marche-client");
+    if (!select) return;
+    select.innerHTML = "";
+    this.state.clients.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = `${c.nomSociete} (${c.codeClient})`;
+      select.appendChild(opt);
+    });
+  },
+
+  populateSiteDropdown() {
+    const select = document.getElementById("form-equipement-site");
+    if (!select) return;
+    select.innerHTML = "";
+    this.state.clients.forEach(c => {
+      const sites = c.sites || [];
+      sites.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = `${s.nomSite} (${s.ville}) — ${c.nomSociete}`;
+        select.appendChild(opt);
+      });
+    });
+  },
+
   openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) modal.classList.add("active");
@@ -572,6 +611,102 @@ const App = {
     this.closeModal("modal-rapport");
     this.showToast("Fiche de visite enregistrée et validée.");
     this.renderCurrentTab();
+  },
+
+  async handleCreateMarche(e) {
+    e.preventDefault();
+    const codeMarche = document.getElementById("form-marche-code").value;
+    const libelle = document.getElementById("form-marche-libelle").value;
+    const clientId = parseInt(document.getElementById("form-marche-client").value);
+    const dateDebut = document.getElementById("form-marche-datedebut").value;
+    const dateFin = document.getElementById("form-marche-datefin").value;
+    const slaHeures = parseInt(document.getElementById("form-marche-sla").value);
+    const visitesAnnuellesPrevues = parseInt(document.getElementById("form-marche-visites").value);
+    const statut = document.getElementById("form-marche-statut").value;
+
+    const payload = {
+      codeMarche,
+      libelle,
+      clientId,
+      dateDebut: new Date(dateDebut).toISOString(),
+      dateFin: new Date(dateFin).toISOString(),
+      slaHeures,
+      visitesAnnuellesPrevues,
+      visitesRealisees: 0,
+      statut
+    };
+
+    let result = await this.fetchApi("/api/marches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!result) {
+      const client = this.state.clients.find(c => c.id === clientId);
+      result = {
+        id: Date.now(),
+        codeMarche: codeMarche || `MAR-2026-${Math.floor(100 + Math.random() * 900)}`,
+        libelle,
+        clientId,
+        clientNom: client ? client.nomSociete : "Client",
+        dateDebut,
+        dateFin,
+        slaHeures,
+        visitesAnnuellesPrevues,
+        visitesRealisees: 0,
+        statut
+      };
+      this.state.marches.unshift(result);
+    }
+
+    this.closeModal("modal-marche");
+    this.showToast(`Nouveau marché ${result.codeMarche || ''} créé avec succès !`);
+    this.loadAllData();
+  },
+
+  async handleCreateEquipement(e) {
+    e.preventDefault();
+    const nom = document.getElementById("form-equipement-nom").value;
+    const serialNumber = document.getElementById("form-equipement-serial").value;
+    const categorie = document.getElementById("form-equipement-categorie").value;
+    const siteId = parseInt(document.getElementById("form-equipement-site").value);
+    const criticiticite = parseInt(document.getElementById("form-equipement-criticite").value);
+    const scoreSante = parseInt(document.getElementById("form-equipement-sante").value);
+    const dateInstallation = document.getElementById("form-equipement-date").value;
+    const statut = document.getElementById("form-equipement-statut").value;
+
+    const payload = {
+      nom,
+      serialNumber: serialNumber || `EQ-${categorie.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
+      categorie,
+      siteId,
+      criticiticite,
+      scoreSante,
+      dateInstallation: new Date(dateInstallation).toISOString(),
+      statut,
+      derniereVisite: new Date().toISOString(),
+      prochaineVisitePrevue: new Date().toISOString()
+    };
+
+    let result = await this.fetchApi("/api/equipements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!result) {
+      result = {
+        id: Date.now(),
+        ...payload,
+        scoreRisque: Math.max(10, 100 - scoreSante)
+      };
+      this.state.equipements.unshift(result);
+    }
+
+    this.closeModal("modal-equipement");
+    this.showToast(`Équipement ${result.nom || ''} ajouté avec succès !`);
+    this.loadAllData();
   },
 
   getBadgeClass(statut) {

@@ -45,11 +45,11 @@ else
 
 var app = builder.Build();
 
-// Ensure SQLite database is created and seeded with initial records
+// Ensure database is created and migrations are applied
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    dbContext.Database.EnsureCreated();
+    dbContext.Database.Migrate();
 }
 
 // HTTP Pipeline
