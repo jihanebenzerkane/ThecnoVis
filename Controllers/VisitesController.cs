@@ -155,6 +155,31 @@ namespace TechnoVIS.Controllers
             await _context.SaveChangesAsync();
             return Ok(visite);
         }
+
+        [HttpGet("{id}/techniciens-suggeres")]
+        public async Task<IActionResult> GetTechniciensSuggeres(int id)
+        {
+            var visite = await _context.Visites
+                .Include(v => v.Equipement)
+                .ThenInclude(e => e!.Site)
+                .FirstOrDefaultAsync(v => v.Id == id);
+
+            if (visite == null || visite.Equipement == null) return NotFound(new { message = "Visite ou équipement non trouvé." });
+
+            var techniciens = await _context.Techniciens
+                .Include(t => t.SiteRattache)
+                .ToListAsync();
+
+            var suggestions = techniciens.Select(t => new
+            {
+                Technicien = t,
+                Score = _scoringService.CalculerScoreAffectationTechnicien(t, visite, visite.Equipement)
+            })
+            .OrderByDescending(s => s.Score)
+            .ToList();
+
+            return Ok(suggestions);
+        }
     }
 
     public class StatutUpdateRequest

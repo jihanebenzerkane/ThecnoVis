@@ -47,5 +47,53 @@ namespace TechnoVIS.Services
 
             return Math.Round(Math.Clamp(baseScore, 10.0, 100.0), 1);
         }
+
+        /// <summary>
+        /// Calcule un score de pertinence (0-100) pour l'affectation d'un technicien à une visite.
+        /// Basé sur la compétence (40), la proximité géographique (30), la disponibilité (20), et la charge de travail (10).
+        /// </summary>
+        public int CalculerScoreAffectationTechnicien(Technicien technicien, Visite visite, Equipement equipement)
+        {
+            if (technicien == null || visite == null || equipement == null) return 0;
+
+            int score = 0;
+
+            // 1. Compétence (40 points)
+            if (!string.IsNullOrEmpty(technicien.Specialites) && 
+                !string.IsNullOrEmpty(equipement.Categorie) &&
+                technicien.Specialites.Contains(equipement.Categorie, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 40;
+            }
+
+            // 2. Proximité (30 points)
+            if (technicien.SiteRattacheId == equipement.SiteId)
+            {
+                score += 30;
+            }
+            // Add +15 if same client? The prompt says "+15 if same client, else 0". 
+            // We need to know the client. Site has ClientId. If we can get ClientId of both sites...
+            // Let's rely on SiteRattacheId for exact site (+30).
+            // Actually, we need to handle "same client". If equipement.Site.ClientId == technicien.SiteRattache.ClientId
+            // Let's implement that if the data is available. If not loaded, we just use the ID check we can do.
+            else if (equipement.Site != null && technicien.SiteRattache != null && 
+                     equipement.Site.ClientId == technicien.SiteRattache.ClientId)
+            {
+                score += 15;
+            }
+
+            // 3. Disponibilité (20 points)
+            if (technicien.Disponible)
+            {
+                score += 20;
+            }
+
+            // 4. Charge de travail (10 points max)
+            int scoreCharge = 10 - (technicien.ChargeActuelle * 2);
+            if (scoreCharge < 0) scoreCharge = 0;
+            score += scoreCharge;
+
+            return Math.Clamp(score, 0, 100);
+        }
     }
 }

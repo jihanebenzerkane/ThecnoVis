@@ -16,6 +16,7 @@ namespace TechnoVIS.Data
         public DbSet<Site> Sites => Set<Site>();
         public DbSet<Equipement> Equipements => Set<Equipement>();
         public DbSet<Visite> Visites => Set<Visite>();
+        public DbSet<Technicien> Techniciens => Set<Technicien>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -57,6 +58,15 @@ namespace TechnoVIS.Data
                 new Visite { Id = 2, Reference = "VIS-2026-1002", TypeVisite = "Curative", EquipementId = 2, TechnicienAssigne = "Hassan Chraibi", DatePrevue = new DateTime(2026, 7, 28, 14, 30, 0), DureeEstimeeMinutes = 180, Statut = "En retard", ScorePriorite = 92.0, RapportTechnique = "Alerte pression huile moteur au démarrage.", ActionsCorrectives = "Remplacement filtre huile et purge système." },
                 new Visite { Id = 3, Reference = "VIS-2026-1003", TypeVisite = "Audit", EquipementId = 3, TechnicienAssigne = "Nadia Berrada", DatePrevue = new DateTime(2026, 7, 26, 9, 0, 0), DateRealisee = new DateTime(2026, 7, 26, 11, 30, 0), DureeEstimeeMinutes = 90, Statut = "Validée", ScorePriorite = 45.0, RapportTechnique = "Analyse diélectrique huile conforme.", ActionsCorrectives = "Rien à signaler." },
                 new Visite { Id = 4, Reference = "VIS-2026-1004", TypeVisite = "Préventive", EquipementId = 5, TechnicienAssigne = "Amine El Amrani", DatePrevue = new DateTime(2026, 8, 1, 15, 0, 0), DureeEstimeeMinutes = 150, Statut = "Planifiée", ScorePriorite = 88.5, RapportTechnique = "", ActionsCorrectives = "" }
+            );
+
+            // Seed Techniciens
+            modelBuilder.Entity<Technicien>().HasData(
+                new Technicien { Id = 1, Nom = "El Amrani", Prenom = "Amine", Specialites = "HVAC,TGBT", SiteRattacheId = 1, ChargeActuelle = 3, Disponible = true },
+                new Technicien { Id = 2, Nom = "Chraibi", Prenom = "Hassan", Specialites = "Groupe Électrogène,Compresseur", SiteRattacheId = 3, ChargeActuelle = 5, Disponible = true },
+                new Technicien { Id = 3, Nom = "Berrada", Prenom = "Nadia", Specialites = "Transformateur,TGBT", SiteRattacheId = 2, ChargeActuelle = 1, Disponible = true },
+                new Technicien { Id = 4, Nom = "Mansouri", Prenom = "Youssef", Specialites = "HVAC", SiteRattacheId = 1, ChargeActuelle = 0, Disponible = false },
+                new Technicien { Id = 5, Nom = "Tazi", Prenom = "Othmane", Specialites = "Groupe Électrogène", SiteRattacheId = 2, ChargeActuelle = 2, Disponible = true }
             );
         }
     }
