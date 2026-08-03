@@ -17,14 +17,14 @@ namespace TechnoVIS.Migrations
                 name: "Clients",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    CodeClient = table.Column<string>(type: "TEXT", nullable: false),
-                    NomSociete = table.Column<string>(type: "TEXT", nullable: false),
-                    ContactPrincipal = table.Column<string>(type: "TEXT", nullable: false),
-                    Email = table.Column<string>(type: "TEXT", nullable: false),
-                    Telephone = table.Column<string>(type: "TEXT", nullable: false),
-                    Adresse = table.Column<string>(type: "TEXT", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    CodeClient = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    NomSociete = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ContactPrincipal = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Email = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Telephone = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Adresse = table.Column<string>(type: "nvarchar(max)", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -35,17 +35,17 @@ namespace TechnoVIS.Migrations
                 name: "Marches",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    CodeMarche = table.Column<string>(type: "TEXT", nullable: false),
-                    Libelle = table.Column<string>(type: "TEXT", nullable: false),
-                    ClientId = table.Column<int>(type: "INTEGER", nullable: false),
-                    DateDebut = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    DateFin = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    SlaHeures = table.Column<int>(type: "INTEGER", nullable: false),
-                    VisitesAnnuellesPrevues = table.Column<int>(type: "INTEGER", nullable: false),
-                    VisitesRealisees = table.Column<int>(type: "INTEGER", nullable: false),
-                    Statut = table.Column<string>(type: "TEXT", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    CodeMarche = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Libelle = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ClientId = table.Column<int>(type: "int", nullable: false),
+                    DateDebut = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    DateFin = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    SlaHeures = table.Column<int>(type: "int", nullable: false),
+                    VisitesAnnuellesPrevues = table.Column<int>(type: "int", nullable: false),
+                    VisitesRealisees = table.Column<int>(type: "int", nullable: false),
+                    Statut = table.Column<string>(type: "nvarchar(max)", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -62,16 +62,16 @@ namespace TechnoVIS.Migrations
                 name: "Sites",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    CodeSite = table.Column<string>(type: "TEXT", nullable: false),
-                    NomSite = table.Column<string>(type: "TEXT", nullable: false),
-                    ClientId = table.Column<int>(type: "INTEGER", nullable: false),
-                    Adresse = table.Column<string>(type: "TEXT", nullable: false),
-                    Ville = table.Column<string>(type: "TEXT", nullable: false),
-                    CodePostal = table.Column<string>(type: "TEXT", nullable: false),
-                    Latitude = table.Column<double>(type: "REAL", nullable: false),
-                    Longitude = table.Column<double>(type: "REAL", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    CodeSite = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    NomSite = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ClientId = table.Column<int>(type: "int", nullable: false),
+                    Adresse = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Ville = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CodePostal = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Latitude = table.Column<double>(type: "float", nullable: false),
+                    Longitude = table.Column<double>(type: "float", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -88,19 +88,19 @@ namespace TechnoVIS.Migrations
                 name: "Equipements",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    SerialNumber = table.Column<string>(type: "TEXT", nullable: false),
-                    Nom = table.Column<string>(type: "TEXT", nullable: false),
-                    Categorie = table.Column<string>(type: "TEXT", nullable: false),
-                    SiteId = table.Column<int>(type: "INTEGER", nullable: false),
-                    DateInstallation = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    Criticiticite = table.Column<int>(type: "INTEGER", nullable: false),
-                    ScoreSante = table.Column<int>(type: "INTEGER", nullable: false),
-                    ScoreRisque = table.Column<int>(type: "INTEGER", nullable: false),
-                    Statut = table.Column<string>(type: "TEXT", nullable: false),
-                    DerniereVisite = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    ProchaineVisitePrevue = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    SerialNumber = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Nom = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Categorie = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    SiteId = table.Column<int>(type: "int", nullable: false),
+                    DateInstallation = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Criticiticite = table.Column<int>(type: "int", nullable: false),
+                    ScoreSante = table.Column<int>(type: "int", nullable: false),
+                    ScoreRisque = table.Column<int>(type: "int", nullable: false),
+                    Statut = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    DerniereVisite = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    ProchaineVisitePrevue = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -114,22 +114,46 @@ namespace TechnoVIS.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Techniciens",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Nom = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Prenom = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Specialites = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    SiteRattacheId = table.Column<int>(type: "int", nullable: false),
+                    ChargeActuelle = table.Column<int>(type: "int", nullable: false),
+                    Disponible = table.Column<bool>(type: "bit", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Techniciens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Techniciens_Sites_SiteRattacheId",
+                        column: x => x.SiteRattacheId,
+                        principalTable: "Sites",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Visites",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    Reference = table.Column<string>(type: "TEXT", nullable: false),
-                    TypeVisite = table.Column<string>(type: "TEXT", nullable: false),
-                    EquipementId = table.Column<int>(type: "INTEGER", nullable: false),
-                    TechnicienAssigne = table.Column<string>(type: "TEXT", nullable: false),
-                    DatePrevue = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    DateRealisee = table.Column<DateTime>(type: "TEXT", nullable: true),
-                    DureeEstimeeMinutes = table.Column<int>(type: "INTEGER", nullable: false),
-                    Statut = table.Column<string>(type: "TEXT", nullable: false),
-                    ScorePriorite = table.Column<double>(type: "REAL", nullable: false),
-                    RapportTechnique = table.Column<string>(type: "TEXT", nullable: false),
-                    ActionsCorrectives = table.Column<string>(type: "TEXT", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Reference = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    TypeVisite = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    EquipementId = table.Column<int>(type: "int", nullable: false),
+                    TechnicienAssigne = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    DatePrevue = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    DateRealisee = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DureeEstimeeMinutes = table.Column<int>(type: "int", nullable: false),
+                    Statut = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ScorePriorite = table.Column<double>(type: "float", nullable: false),
+                    RapportTechnique = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ActionsCorrectives = table.Column<string>(type: "nvarchar(max)", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -185,6 +209,18 @@ namespace TechnoVIS.Migrations
                 });
 
             migrationBuilder.InsertData(
+                table: "Techniciens",
+                columns: new[] { "Id", "ChargeActuelle", "Disponible", "Nom", "Prenom", "SiteRattacheId", "Specialites" },
+                values: new object[,]
+                {
+                    { 1, 3, true, "El Amrani", "Amine", 1, "HVAC,TGBT" },
+                    { 2, 5, true, "Chraibi", "Hassan", 3, "Groupe Électrogène,Compresseur" },
+                    { 3, 1, true, "Berrada", "Nadia", 2, "Transformateur,TGBT" },
+                    { 4, 0, false, "Mansouri", "Youssef", 1, "HVAC" },
+                    { 5, 2, true, "Tazi", "Othmane", 2, "Groupe Électrogène" }
+                });
+
+            migrationBuilder.InsertData(
                 table: "Visites",
                 columns: new[] { "Id", "ActionsCorrectives", "DatePrevue", "DateRealisee", "DureeEstimeeMinutes", "EquipementId", "RapportTechnique", "Reference", "ScorePriorite", "Statut", "TechnicienAssigne", "TypeVisite" },
                 values: new object[,]
@@ -211,6 +247,11 @@ namespace TechnoVIS.Migrations
                 column: "ClientId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Techniciens_SiteRattacheId",
+                table: "Techniciens",
+                column: "SiteRattacheId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Visites_EquipementId",
                 table: "Visites",
                 column: "EquipementId");
@@ -221,6 +262,9 @@ namespace TechnoVIS.Migrations
         {
             migrationBuilder.DropTable(
                 name: "Marches");
+
+            migrationBuilder.DropTable(
+                name: "Techniciens");
 
             migrationBuilder.DropTable(
                 name: "Visites");

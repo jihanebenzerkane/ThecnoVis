@@ -137,6 +137,7 @@ const App = {
 
     // Boutons d'ouverture des modales
     document.getElementById("btn-open-modal-visite")?.addEventListener("click", () => {
+      this.resetTechnicienDropdown();
       this.openModal("modal-visite");
     });
     document.getElementById("btn-open-modal-marche")?.addEventListener("click", () => {
@@ -179,6 +180,16 @@ const App = {
     // Filtre statut planning
     document.getElementById("filter-statut-visite")?.addEventListener("change", (e) => {
       this.renderPlanningTable(e.target.value);
+    });
+
+    // Technicien suggestion: triggered when equipement changes in the new-visite modal
+    document.getElementById("form-visite-equipement")?.addEventListener("change", (e) => {
+      const equipementId = parseInt(e.target.value);
+      if (equipementId) {
+        this.loadTechniciensSuggeres(equipementId);
+      } else {
+        this.resetTechnicienDropdown();
+      }
     });
   },
 
@@ -239,6 +250,80 @@ const App = {
     document.getElementById("kpi-visites-retard").textContent = stats.visitesEnRetard ?? 0;
     document.getElementById("kpi-equipements-critiques").textContent = stats.equipementsCritiques ?? 0;
     document.getElementById("kpi-taux-conformite").textContent = `${stats.tauxConformite ?? 100}%`;
+
+    // ── Chart 1: Visites par Statut (bar chart) ──────────────────────────
+    const ctx1 = document.getElementById("chart-visites-statut");
+    if (ctx1 && typeof Chart !== "undefined") {
+      if (ctx1._chartInstance) ctx1._chartInstance.destroy();
+
+      const planifiees = stats.visitesPlanifiees ?? 0;
+      const enRetard   = stats.visitesEnRetard ?? 0;
+      const validees   = stats.visitesValidees ?? (stats.totalVisites - planifiees - enRetard);
+
+      ctx1._chartInstance = new Chart(ctx1, {
+        type: "bar",
+        data: {
+          labels: ["Planifiées", "En Retard", "Validées"],
+          datasets: [{
+            label: "Nombre de visites",
+            data: [planifiees, enRetard, validees],
+            backgroundColor: ["#1a9b8a", "#e05a5a", "#34c38f"],
+            borderRadius: 6,
+            borderSkipped: false
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} visite(s)` } }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: "#6e6e73", font: { family: "Inter, sans-serif" } } },
+            y: { beginAtZero: true, grid: { color: "#e5e5ea" }, ticks: { color: "#6e6e73", stepSize: 1, precision: 0 } }
+          }
+        }
+      });
+    }
+
+    // ── Chart 2: Répartition du Risque Équipements (horizontal bar) ───────
+    const ctx2 = document.getElementById("chart-equipements-risque");
+    if (ctx2 && typeof Chart !== "undefined" && this.state.equipements.length > 0) {
+      if (ctx2._chartInstance) ctx2._chartInstance.destroy();
+
+      const eqs = this.state.equipements;
+      const faible   = eqs.filter(e => e.scoreRisque < 40).length;
+      const moyen    = eqs.filter(e => e.scoreRisque >= 40 && e.scoreRisque < 70).length;
+      const critique = eqs.filter(e => e.scoreRisque >= 70).length;
+
+      ctx2._chartInstance = new Chart(ctx2, {
+        type: "bar",
+        data: {
+          labels: ["Faible (< 40)", "Moyen (40-69)", "Critique (≥ 70)"],
+          datasets: [{
+            label: "Équipements",
+            data: [faible, moyen, critique],
+            backgroundColor: ["#34c38f", "#f5a623", "#e05a5a"],
+            borderRadius: 6,
+            borderSkipped: false
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x} équipement(s)` } }
+          },
+          scales: {
+            x: { beginAtZero: true, grid: { color: "#e5e5ea" }, ticks: { color: "#6e6e73", stepSize: 1, precision: 0 } },
+            y: { grid: { display: false }, ticks: { color: "#6e6e73", font: { family: "Inter, sans-serif" } } }
+          }
+        }
+      });
+    }
 
     const tbody = document.getElementById("table-urgent-body");
     if (!tbody) return;
@@ -482,13 +567,73 @@ const App = {
   populateEquipementDropdown() {
     const select = document.getElementById("form-visite-equipement");
     if (!select) return;
-    select.innerHTML = "";
+    // Blank first option so user must consciously choose
+    select.innerHTML = `<option value="">— Choisir un équipement —</option>`;
     this.state.equipements.forEach(e => {
       const opt = document.createElement("option");
       opt.value = e.id;
       opt.textContent = `${e.nom} (${e.serialNumber}) — ${e.siteNom}`;
       select.appendChild(opt);
     });
+  },
+
+  // Reset the technicien dropdown to its disabled placeholder state
+  resetTechnicienDropdown() {
+    const sel = document.getElementById("form-visite-technicien");
+    if (!sel) return;
+    sel.innerHTML = `<option value="">Sélectionnez un équipement d'abord</option>`;
+    sel.disabled = true;
+  },
+
+  /**
+   * Fetch the ranked technician suggestions for a given equipement.
+   * Uses the first visite in state matching that equipement as context for the
+   * scoring endpoint. Falls back to GET /api/techniciens if no visite exists yet.
+   */
+  async loadTechniciensSuggeres(equipementId) {
+    const sel = document.getElementById("form-visite-technicien");
+    if (!sel) return;
+
+    // Show loading state
+    sel.innerHTML = `<option value="">Chargement des suggestions…</option>`;
+    sel.disabled = true;
+
+    // Find a visite for this equipement to use as scoring context
+    const matchingVisite = this.state.visites.find(v => v.equipementId === equipementId);
+
+    let suggestions = null;
+    if (matchingVisite) {
+      suggestions = await this.fetchApi(`/api/visites/${matchingVisite.id}/techniciens-suggeres`);
+    }
+
+    // Fallback: plain list from /api/techniciens (no score)
+    if (!suggestions) {
+      const techniciens = await this.fetchApi("/api/techniciens");
+      if (techniciens) {
+        suggestions = techniciens.map(t => ({ technicien: t, score: 0 }));
+      }
+    }
+
+    if (!suggestions || suggestions.length === 0) {
+      sel.innerHTML = `<option value="">Aucun technicien disponible</option>`;
+      sel.disabled = true;
+      return;
+    }
+
+    // Build option list ranked best → worst
+    sel.innerHTML = `<option value="">— Choisir un technicien —</option>`;
+    suggestions.forEach(s => {
+      const t = s.technicien;
+      const opt = document.createElement("option");
+      // Store full name as the value (matches TechnicienAssigne field in backend)
+      opt.value = `${t.prenom} ${t.nom}`;
+      const scoreLabel = s.score > 0 ? ` — ${s.score}%` : "";
+      const disponLabel = t.disponible ? "" : " ⚠ Indisponible";
+      opt.textContent = `${t.prenom} ${t.nom}${scoreLabel}${disponLabel}`;
+      if (!t.disponible) opt.style.color = "var(--accent-orange, #f5a623)";
+      sel.appendChild(opt);
+    });
+    sel.disabled = false;
   },
 
   populateClientDropdown() {

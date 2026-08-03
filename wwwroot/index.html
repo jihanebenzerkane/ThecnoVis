@@ -7,6 +7,7 @@
   <meta name="description" content="Système ECS de planification et suivi des visites de maintenance industrielle.">
   <link rel="stylesheet" href="styles.css">
   <script src="fallback.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
 <div id="app">
@@ -144,6 +145,29 @@
             <span class="metric-value success" id="kpi-taux-conformite">—</span>
             <span class="metric-subtext">Visites validées à temps</span>
           </div>
+        </div>
+
+        <!-- Charts row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+
+          <div class="section-panel" style="padding: 20px;">
+            <div class="panel-header" style="margin-bottom: 16px;">
+              <span class="panel-title">Visites par Statut</span>
+            </div>
+            <div style="position: relative; height: 220px;">
+              <canvas id="chart-visites-statut"></canvas>
+            </div>
+          </div>
+
+          <div class="section-panel" style="padding: 20px;">
+            <div class="panel-header" style="margin-bottom: 16px;">
+              <span class="panel-title">Répartition du Risque Équipements</span>
+            </div>
+            <div style="position: relative; height: 220px;">
+              <canvas id="chart-equipements-risque"></canvas>
+            </div>
+          </div>
+
         </div>
 
         <!-- Urgent interventions -->
@@ -363,7 +387,12 @@
       </div>
       <div class="form-group">
         <label for="form-visite-technicien">Technicien Assigné</label>
-        <input type="text" class="form-control" id="form-visite-technicien" value="Amine El Amrani" required>
+        <select class="form-control" id="form-visite-technicien" required disabled>
+          <option value="">Sélectionnez un équipement d'abord</option>
+        </select>
+        <small id="form-visite-technicien-hint" style="color: var(--text-muted); font-size: 0.78rem; margin-top: 4px; display: block;">
+          Le classement est calculé automatiquement par compétence, proximité et disponibilité.
+        </small>
       </div>
       <div class="form-group">
         <label for="form-visite-date">Date & Heure Prévues</label>
