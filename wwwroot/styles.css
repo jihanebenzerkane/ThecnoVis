@@ -656,3 +656,115 @@ html, body {
   .metrics-grid { grid-template-columns: 1fr; }
   .metric-value { font-size: var(--text-3xl); }
 }
+
+/* --- Preloader ------------------------------------------------------ */
+#preloader {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.6s cubic-bezier(0.87, 0, 0.13, 1), visibility 0.6s;
+}
+
+.preloader-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.preloader-logo {
+  height: 60px;
+  width: auto;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.loading-bar-container {
+  width: 200px;
+  height: 2px;
+  background: var(--border-light);
+  border-radius: 2px;
+  overflow: hidden;
+  opacity: 0;
+  animation: fadeIn 0.4s 0.4s forwards;
+}
+
+.loading-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  animation: loadProgress 1.2s cubic-bezier(0.87, 0, 0.13, 1) forwards;
+}
+
+.preloader-hide {
+  opacity: 0;
+  visibility: hidden;
+}
+
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+@keyframes loadProgress {
+  0% { width: 0%; }
+  50% { width: 70%; }
+  100% { width: 100%; }
+}
+
+
+/* --- Collapsed Sidebar Mode ----------------------------------------- */
+body.sidebar-collapsed .sidebar {
+  width: 72px;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.sidebar-collapsed .main-wrapper {
+  margin-left: 72px;
+  transition: margin-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.sidebar-collapsed .brand-title,
+body.sidebar-collapsed .brand-subtitle,
+body.sidebar-collapsed #network-text,
+body.sidebar-collapsed .nav-item {
+  font-size: 0;
+  opacity: 0;
+  padding: 11px 0;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+body.sidebar-collapsed .nav-item svg {
+  margin: 0;
+}
+
+body.sidebar-collapsed .sidebar-header {
+  justify-content: center;
+  padding: 0;
+}
+
+body.sidebar-collapsed .sidebar-header img {
+  margin-right: 0 !important;
+}
+
+body.sidebar-collapsed .status-indicator {
+  justify-content: center;
+}
+
+.sidebar, .main-wrapper {
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), margin-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-item, .brand-title, .brand-subtitle, #network-text {
+  transition: opacity 0.2s, font-size 0.2s;
+  overflow: hidden;
+  white-space: nowrap;
+}
+

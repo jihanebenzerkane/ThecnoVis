@@ -33,7 +33,15 @@ const App = {
   init() {
     console.log("TechnoVIS Initialisation...");
     this.setupEventListeners();
-    this.loadAllData();
+    this.loadAllData().then(() => {
+      setTimeout(() => {
+        const preloader = document.getElementById("preloader");
+        if (preloader) {
+          preloader.classList.add("preloader-hide");
+          setTimeout(() => preloader.style.display = 'none', 600);
+        }
+      }, 1000); // Give the preloader animation a bit of time
+    });
   },
 
   /* ------------------------------------------------------------------------
@@ -129,6 +137,11 @@ const App = {
       });
     });
 
+    // Toggle Sidebar
+    document.getElementById("btn-toggle-sidebar")?.addEventListener("click", () => {
+      document.body.classList.toggle("sidebar-collapsed");
+    });
+
     // Bouton d'actualisation
     document.getElementById("btn-refresh-data")?.addEventListener("click", () => {
       this.loadAllData();
@@ -156,6 +169,12 @@ const App = {
     document.getElementById("btn-cancel-marche")?.addEventListener("click", () => this.closeModal("modal-marche"));
     document.getElementById("close-modal-equipement")?.addEventListener("click", () => this.closeModal("modal-equipement"));
     document.getElementById("btn-cancel-equipement")?.addEventListener("click", () => this.closeModal("modal-equipement"));
+
+    document.getElementById("btn-open-modal-import-excel")?.addEventListener("click", () => {
+      this.openExcelImportModal();
+    });
+    document.getElementById("close-modal-import-excel")?.addEventListener("click", () => this.closeModal("modal-import-excel"));
+    document.getElementById("btn-cancel-import-excel")?.addEventListener("click", () => this.closeModal("modal-import-excel"));
 
     // Formulaires
     document.getElementById("form-new-visite")?.addEventListener("submit", (e) => this.handleCreateVisite(e));
@@ -189,6 +208,39 @@ const App = {
         this.loadTechniciensSuggeres(equipementId);
       } else {
         this.resetTechnicienDropdown();
+      }
+    });
+
+    // Excel Import modal controls
+    document.getElementById("input-excel-file")?.addEventListener("change", (e) => {
+      const btn = document.getElementById("btn-preview-excel");
+      if (btn) btn.disabled = !e.target.files.length;
+    });
+    document.getElementById("btn-preview-excel")?.addEventListener("click", () => this.handleExcelPreview());
+    document.getElementById("btn-back-import")?.addEventListener("click", () => this.showImportStep(1));
+    document.getElementById("btn-confirm-import")?.addEventListener("click", () => this.handleExcelConfirm());
+
+    // Export preview modal controls
+    document.getElementById("btn-export-visites-excel")?.addEventListener("click", () => {
+      this.openExportModal("visites");
+    });
+    document.getElementById("btn-export-marches-excel")?.addEventListener("click", () => {
+      this.openExportModal("marches");
+    });
+    document.getElementById("btn-refresh-export-preview")?.addEventListener("click", () => {
+      this.refreshExportPreview();
+    });
+    document.getElementById("btn-do-export")?.addEventListener("click", () => {
+      this.doExportDownload();
+    });
+    document.getElementById("close-modal-export")?.addEventListener("click", () => this.closeModal("modal-export-preview"));
+    document.getElementById("btn-cancel-export")?.addEventListener("click", () => this.closeModal("modal-export-preview"));
+    document.getElementById("export-format")?.addEventListener("change", () => this.updateExportFormatDesc());
+
+    document.getElementById("btn-export-pv")?.addEventListener("click", () => {
+      const visiteId = document.getElementById("form-rapport-id")?.value;
+      if (visiteId) {
+        window.open(`/api/visites/${visiteId}/pv-pdf`, "_blank");
       }
     });
   },
@@ -682,6 +734,11 @@ const App = {
     document.getElementById("form-rapport-texte").value = visite.rapportTechnique || "";
     document.getElementById("form-rapport-actions").value = visite.actionsCorrectives || "";
 
+    const btnExportPdf = document.getElementById("btn-export-pv");
+    if (btnExportPdf) {
+      btnExportPdf.style.display = visite.statut === "Validée" ? "inline-block" : "none";
+    }
+
     this.openModal("modal-rapport");
   },
 
@@ -876,5 +933,240 @@ const App = {
       toast.style.opacity = "0";
       setTimeout(() => toast.remove(), 300);
     }, 3500);
+  },
+
+  /* ------------------------------------------------------------------------
+   * EXCEL IMPORT — Marchés
+   * Two-step flow: Preview (no DB write) → Confirm (DB write)
+   * ------------------------------------------------------------------------ */
+
+  // Stored during preview so confirm can re-use them without re-parsing
+  _excelImportAllRows: null,
+
+  openExcelImportModal() {
+    // Reset to step 1 state
+    const fileInput = document.getElementById("input-excel-file");
+    if (fileInput) fileInput.value = "";
+    const btn = document.getElementById("btn-preview-excel");
+    if (btn) btn.disabled = true;
+    const errDiv = document.getElementById("import-error-msg");
+    if (errDiv) { errDiv.textContent = ""; errDiv.style.display = "none"; }
+    this._excelImportAllRows = null;
+    this.showImportStep(1);
+    this.openModal("modal-import-excel");
+  },
+
+  showImportStep(step) {
+    document.getElementById("import-step-1").style.display = step === 1 ? "block" : "none";
+    document.getElementById("import-step-2").style.display = step === 2 ? "block" : "none";
+  },
+
+  async handleExcelPreview() {
+    const fileInput = document.getElementById("input-excel-file");
+    if (!fileInput || !fileInput.files.length) return;
+
+    const errDiv = document.getElementById("import-error-msg");
+    const btn = document.getElementById("btn-preview-excel");
+    btn.textContent = "Analyse en cours…";
+    btn.disabled = true;
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    let result;
+    try {
+      const resp = await fetch("/api/marches/import/preview", { method: "POST", body: formData });
+      result = await resp.json();
+      if (!resp.ok) {
+        errDiv.textContent = result.error || "Erreur lors de l'analyse.";
+        errDiv.style.display = "block";
+        btn.textContent = "Analyser le fichier";
+        btn.disabled = false;
+        return;
+      }
+    } catch (err) {
+      errDiv.textContent = "Impossible de joindre l'API. Vérifiez que le serveur est démarré.";
+      errDiv.style.display = "block";
+      btn.textContent = "Analyser le fichier";
+      btn.disabled = false;
+      return;
+    }
+
+    // Store all rows for the confirm step
+    this._excelImportAllRows = result.allRows;
+
+    // Render summary
+    const summary = document.getElementById("import-summary");
+    summary.innerHTML = `<strong>${result.rowCount}</strong> ligne(s) détectée(s) dans le fichier. Aperçu des 5 premières :`;
+
+    // Render preview table
+    const tbody = document.getElementById("import-preview-body");
+    tbody.innerHTML = "";
+    (result.preview || []).forEach(r => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.rowIndex}</td>
+        <td><strong>${r.reference || "—"}</strong></td>
+        <td>${r.clientNom || "—"}</td>
+        <td>${r.dateDebut || "—"}</td>
+        <td>${r.dateFin || "—"}</td>
+        <td>${r.typeContrat || "—"}</td>
+        <td>${r.visitesAnnuellesPrevues ?? 0}</td>
+        <td>${r.sites || "—"}</td>
+        <td style="color: ${r.parseWarning ? '#f5a623' : 'var(--text-muted)'}; font-size:0.75rem;">
+          ${r.parseWarning || "✓"}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    btn.textContent = "Analyser le fichier";
+    btn.disabled = false;
+    this.showImportStep(2);
+  },
+
+  async handleExcelConfirm() {
+    if (!this._excelImportAllRows || !this._excelImportAllRows.length) return;
+
+    const btn = document.getElementById("btn-confirm-import");
+    btn.textContent = "Import en cours…";
+    btn.disabled = true;
+
+    let result;
+    try {
+      const resp = await fetch("/api/marches/import/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(this._excelImportAllRows)
+      });
+      result = await resp.json();
+    } catch (err) {
+      this.showToast("Erreur réseau lors de la confirmation de l'import.");
+      btn.textContent = "Confirmer l'import";
+      btn.disabled = false;
+      return;
+    }
+
+    this.closeModal("modal-import-excel");
+    const msg = `Import terminé — ${result.imported} marché(s) importé(s), ${result.skipped} ignoré(s).`;
+    this.showToast(msg);
+
+    if (result.errors && result.errors.length > 0) {
+      console.warn("Erreurs d'import:", result.errors);
+      this.showToast(`⚠ ${result.errors.length} erreur(s) — voir la console pour le détail.`);
+    }
+
+    btn.textContent = "Confirmer l'import";
+    btn.disabled = false;
+    this._excelImportAllRows = null;
+    this.loadAllData(); // Refresh the table
+  },
+
+  /* ------------------------------------------------------------------------
+   * EXPORT CENTER — Preview Modal
+   * ------------------------------------------------------------------------ */
+
+  openExportModal(source) {
+    // Set the dropdown to the right source
+    const sourceEl = document.getElementById("export-source");
+    if (sourceEl) sourceEl.value = source;
+
+    this.openModal("modal-export-preview");
+    this.refreshExportPreview();
+    this.updateExportFormatDesc();
+  },
+
+  async refreshExportPreview() {
+    const source = document.getElementById("export-source")?.value || "visites";
+    const tbody = document.getElementById("export-preview-tbody");
+    const thead = document.getElementById("export-preview-thead");
+    const info = document.getElementById("export-preview-info");
+
+    if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted);">Chargement…</td></tr>`;
+
+    try {
+      let data, headers, title;
+
+      if (source === "visites") {
+        const visites = this.state.visites;
+        headers = ["Référence", "Type", "Équipement", "Client / Site", "Technicien", "Date Prévue", "Statut"];
+        data = visites.map(v => [
+          v.reference,
+          v.typeVisite,
+          v.equipementNom || "",
+          `${v.clientNom || ""} / ${v.siteNom || ""}`,
+          v.technicienAssigne || "—",
+          v.datePrevue ? new Date(v.datePrevue).toLocaleDateString("fr-FR") : "—",
+          v.statut
+        ]);
+        title = `Planning des Visites`;
+        if (info) info.textContent = `${data.length} visite(s) au total. Aperçu des 5 premières lignes ci-dessous.`;
+      } else {
+        const marches = this.state.marches;
+        headers = ["Référence", "Client", "Date début", "Date fin", "Type contrat", "Nb/An", "Réalisé", "PV", "Facture", "Statut"];
+        data = marches.map(m => [
+          m.libelle || m.codeMarche,
+          m.clientNom || "",
+          m.dateDebut ? new Date(m.dateDebut).toLocaleDateString("fr-FR") : "—",
+          m.dateFin ? new Date(m.dateFin).toLocaleDateString("fr-FR") : "—",
+          m.typeContrat || "",
+          String(m.visitesAnnuellesPrevues ?? 0),
+          String(m.visitesRealisees ?? 0),
+          m.pvRequis ? "OUI" : "NON",
+          m.factureRequise ? "OUI" : "NON",
+          m.statut || ""
+        ]);
+        title = `Marchés & Clients`;
+        if (info) info.textContent = `${data.length} marché(s) au total. Aperçu des 5 premières lignes ci-dessous.`;
+      }
+
+      // Render headers
+      if (thead) thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr>`;
+
+      // Render up to 5 preview rows
+      const preview = data.slice(0, 5);
+      if (tbody) {
+        if (preview.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="${headers.length}" style="text-align:center;padding:24px;color:var(--text-muted);">Aucune donnée disponible.</td></tr>`;
+        } else {
+          tbody.innerHTML = preview.map((row, idx) =>
+            `<tr>${row.map(cell => `<td>${cell ?? ""}</td>`).join("")}</tr>`
+          ).join("");
+          if (data.length > 5) {
+            tbody.innerHTML += `<tr><td colspan="${headers.length}" style="text-align:center;padding:10px;color:var(--text-muted);font-style:italic;background:#fafafa;">… et ${data.length - 5} ligne(s) supplémentaire(s) dans le fichier exporté.</td></tr>`;
+          }
+        }
+      }
+    } catch (e) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--danger);">Erreur lors du chargement de l'aperçu.</td></tr>`;
+    }
+  },
+
+  updateExportFormatDesc() {
+    const format = document.getElementById("export-format")?.value;
+    const desc = document.getElementById("export-format-desc");
+    if (!desc) return;
+    const descriptions = {
+      excel: "📊 <strong>Excel (.xlsx)</strong> — Tableau structuré avec en-têtes en gras, colonnes auto-ajustées. Compatible Microsoft Excel, LibreOffice Calc.",
+      pdf:   "📄 <strong>PDF (A4 paysage)</strong> — Document imprimable prêt à l'emploi. Toutes les colonnes sont incluses avec en-têtes clairs.",
+      csv:   "📋 <strong>CSV (UTF-8)</strong> — Format universel compatible avec tous les outils d'analyse (Excel, Python, R, etc.). Encodage UTF-8 avec BOM."
+    };
+    desc.innerHTML = descriptions[format] || "";
+  },
+
+  doExportDownload() {
+    const source = document.getElementById("export-source")?.value || "visites";
+    const format = document.getElementById("export-format")?.value || "excel";
+
+    let url;
+    if (source === "visites") {
+      const statut = document.getElementById("filter-statut-visite")?.value || "";
+      url = `/api/visites/export?format=${format}${statut ? `&statut=${encodeURIComponent(statut)}` : ""}`;
+    } else {
+      url = `/api/marches/export?format=${format}`;
+    }
+
+    window.open(url, "_blank");
+    this.showToast(`Export ${format.toUpperCase()} en cours de téléchargement…`);
   }
 };

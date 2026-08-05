@@ -180,6 +180,85 @@ namespace TechnoVIS.Controllers
 
             return Ok(suggestions);
         }
+
+        // ── EXPORTS ─────────────────────────────────────────────────────────
+
+        [HttpGet("export")]
+        public async Task<IActionResult> ExportVisites([FromQuery] string? statut, [FromQuery] string format = "excel",
+            [FromServices] PdfExportService? pdfService = null, [FromServices] CsvExportService? csvService = null)
+        {
+            var query = _context.Visites
+                .Include(v => v.Equipement)
+                .ThenInclude(e => e!.Site)
+                .ThenInclude(s => s!.Client)
+                .AsQueryable();
+
+            if (!string.IsNullOrEmpty(statut))
+            {
+                query = query.Where(v => v.Statut == statut);
+            }
+
+            var visites = await query.OrderBy(v => v.DatePrevue).ToListAsync();
+
+            // Shared data transformation
+            var headers = new string[] { "Référence", "Type", "Équipement", "Client / Site", "Technicien", "Date Prévue", "Statut" };
+            var data = visites.Select(v => new string[]
+            {
+                v.Reference,
+                v.TypeVisite,
+                v.Equipement?.Nom ?? "",
+                $"{v.Equipement?.Site?.Client?.NomSociete} / {v.Equipement?.Site?.NomSite}",
+                v.TechnicienAssigne ?? "",
+                v.DatePrevue.ToString("dd/MM/yyyy"),
+                v.Statut
+            }).ToArray();
+
+            if (format == "pdf")
+            {
+                if (pdfService == null) return StatusCode(500, "PDF service unavailable");
+                var pdfBytes = pdfService.GenerateTablePdf("Planning des Visites", headers, data);
+                return File(pdfBytes, "application/pdf", $"Visites_{DateTime.Now:yyyyMMdd}.pdf");
+            }
+            else if (format == "csv")
+            {
+                if (csvService == null) return StatusCode(500, "CSV service unavailable");
+                var csvBytes = csvService.GenerateCsv(headers, data);
+                return File(csvBytes, "text/csv; charset=utf-8", $"Visites_{DateTime.Now:yyyyMMdd}.csv");
+            }
+            else // default: excel
+            {
+                using var workbook = new ClosedXML.Excel.XLWorkbook();
+                var worksheet = workbook.Worksheets.Add("Planification");
+                for (int c = 0; c < headers.Length; c++)
+                    worksheet.Cell(1, c + 1).Value = headers[c];
+                var headerRange = worksheet.Range(1, 1, 1, headers.Length);
+                headerRange.Style.Font.Bold = true;
+                headerRange.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+                for (int i = 0; i < data.Length; i++)
+                    for (int c = 0; c < data[i].Length; c++)
+                        worksheet.Cell(i + 2, c + 1).Value = data[i][c];
+                worksheet.Columns().AdjustToContents();
+                using var stream = new System.IO.MemoryStream();
+                workbook.SaveAs(stream);
+                return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"Visites_{DateTime.Now:yyyyMMdd}.xlsx");
+            }
+        }
+
+        [HttpGet("{id}/pv-pdf")]
+        public async Task<IActionResult> ExportPvPdf(int id, [FromServices] PdfExportService pdfService)
+        {
+            var visite = await _context.Visites
+                .Include(v => v.Equipement)
+                .ThenInclude(e => e!.Site)
+                .ThenInclude(s => s!.Client)
+                .FirstOrDefaultAsync(v => v.Id == id);
+
+            if (visite == null) return NotFound(new { message = "Visite introuvable." });
+            if (visite.Statut != "Validée") return BadRequest(new { message = "Le PV ne peut être généré que pour une visite validée." });
+
+            var pdfBytes = pdfService.GeneratePvPdf(visite);
+            return File(pdfBytes, "application/pdf", $"PV_{visite.Reference}.pdf");
+        }
     }
 
     public class StatutUpdateRequest

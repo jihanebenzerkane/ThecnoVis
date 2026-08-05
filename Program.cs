@@ -2,7 +2,12 @@ using Microsoft.EntityFrameworkCore;
 using TechnoVIS.Data;
 using TechnoVIS.Services;
 
+using QuestPDF.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure QuestPDF license
+QuestPDF.Settings.License = LicenseType.Community;
 
 // Register Services
 builder.Services.AddOpenApi();
@@ -11,6 +16,9 @@ builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
 });
 builder.Services.AddScoped<ScoringService>();
+builder.Services.AddScoped<ExcelImportService>();
+builder.Services.AddScoped<PdfExportService>();
+builder.Services.AddScoped<CsvExportService>();
 
 
 // CORS configuration for local development

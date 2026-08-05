@@ -15,5 +15,34 @@ namespace TechnoVIS.Models
         public int VisitesAnnuellesPrevues { get; set; } = 12;
         public int VisitesRealisees { get; set; } = 0;
         public string Statut { get; set; } = "Actif"; // Actif, En Renouvellement, Expiré
+
+        // ── Fields added for Excel import ──────────────────────────────────
+        /// <summary>Type de contrat libre (e.g. "Maintenance") — source: colonne "Type de contrat"</summary>
+        public string? TypeContrat { get; set; }
+
+        /// <summary>PV requis — source: colonne "PV O/N" (O = true)</summary>
+        public bool PvRequis { get; set; } = false;
+
+        /// <summary>Facture requise — source: colonne "F O/N" (O = true)</summary>
+        public bool FactureRequise { get; set; } = false;
+
+        /// <summary>Nombre de postes de travail fixes</summary>
+        public int NombrePC { get; set; } = 0;
+
+        /// <summary>Nombre de PC portables</summary>
+        public int NombrePCPortable { get; set; } = 0;
+
+        /// <summary>Nombre d'imprimantes</summary>
+        public int NombreImprimante { get; set; } = 0;
+
+        /// <summary>Nombre de serveurs</summary>
+        public int NombreServeur { get; set; } = 0;
+
+        /// <summary>Équipements divers non structurés — source: colonne "Autres", stocké tel quel</summary>
+        public string? EquipementsDivers { get; set; }
+
+        /// <summary>Commentaire brut depuis Excel — NE PAS utiliser comme Statut fonctionnel</summary>
+        public string? CommentaireImport { get; set; }
     }
 }
+
