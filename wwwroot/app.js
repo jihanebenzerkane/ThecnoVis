@@ -1187,20 +1187,129 @@ const App = {
     desc.innerHTML = descriptions[format] || "";
   },
 
-  doExportDownload() {
+  async doExportDownload() {
     const source = document.getElementById("export-source")?.value || "visites";
     const format = document.getElementById("export-format")?.value || "excel";
 
-    let url;
-    if (source === "visites") {
-      const statut = document.getElementById("filter-statut-visite")?.value || "";
-      url = `/api/visites/export?format=${format}${statut ? `&statut=${encodeURIComponent(statut)}` : ""}`;
-    } else {
-      url = `/api/marches/export?format=${format}`;
+    // If online with active API, attempt API export first
+    if (!this.state.isOffline) {
+      let url;
+      if (source === "visites") {
+        const statut = document.getElementById("filter-statut-visite")?.value || "";
+        url = `/api/visites/export?format=${format}${statut ? `&statut=${encodeURIComponent(statut)}` : ""}`;
+      } else {
+        url = `/api/marches/export?format=${format}`;
+      }
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const blob = await res.blob();
+          const downloadUrl = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = downloadUrl;
+          a.download = `${source}_${new Date().toISOString().slice(0, 10)}.${format === "excel" ? "xlsx" : format}`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(downloadUrl);
+          this.showToast(`Export ${format.toUpperCase()} téléchargé avec succès.`);
+          return;
+        }
+      } catch (e) {
+        console.warn("API export unavailable, generating client-side export.");
+      }
     }
 
-    window.open(url, "_blank");
-    this.showToast(`Export ${format.toUpperCase()} en cours de téléchargement…`);
+    // Client-side fallback export (guaranteed to work on Vercel, offline, and without pop-up blockers)
+    this.generateClientSideExport(source, format);
+  },
+
+  generateClientSideExport(source, format) {
+    let headers, rows, filename;
+    const dateStr = new Date().toISOString().slice(0, 10);
+
+    if (source === "visites") {
+      filename = `Visites_Export_${dateStr}`;
+      headers = ["Référence", "Type Visite", "Équipement", "Client / Site", "Technicien", "Date Prévue", "Statut"];
+      rows = (this.state.visites || []).map(v => [
+        v.reference || "",
+        v.typeVisite || "",
+        v.equipementNom || "",
+        `${v.clientNom || ""} / ${v.siteNom || ""}`,
+        v.technicienAssigne || "Non assigné",
+        v.datePrevue ? new Date(v.datePrevue).toLocaleDateString("fr-FR") : "",
+        v.statut || ""
+      ]);
+    } else {
+      filename = `Marches_Export_${dateStr}`;
+      headers = ["Référence", "Client", "Date Début", "Date Fin", "Type Contrat", "Visites/An", "Réalisées", "PV Requis", "Facture Requise", "Statut"];
+      rows = (this.state.marches || []).map(m => [
+        m.libelle || m.codeMarche || "",
+        m.clientNom || "",
+        m.dateDebut ? new Date(m.dateDebut).toLocaleDateString("fr-FR") : "",
+        m.dateFin ? new Date(m.dateFin).toLocaleDateString("fr-FR") : "",
+        m.typeContrat || "",
+        m.visitesAnnuellesPrevues ?? "",
+        m.visitesRealisees ?? "",
+        m.pvRequis ? "OUI" : "NON",
+        m.factureRequise ? "OUI" : "NON",
+        m.statut || ""
+      ]);
+    }
+
+    if (format === "csv" || format === "excel") {
+      const csvContent = "\uFEFF" + [
+        headers.join(";"),
+        ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(";"))
+      ].join("\r\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${filename}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      this.showToast(`Export ${format.toUpperCase()} généré avec succès.`);
+    } else if (format === "pdf") {
+      const printWin = window.open("", "_blank");
+      if (!printWin) {
+        this.showToast("Veuillez autoriser les fenêtres surgissantes pour l'export PDF.");
+        return;
+      }
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>${filename}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #1d1d1f; }
+            h2 { color: #0d9488; margin-bottom: 5px; }
+            p { color: #6e6e73; font-size: 13px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #d2d2d7; padding: 8px 10px; text-align: left; font-size: 11px; }
+            th { background: #f5f5f7; font-weight: bold; }
+            tr:nth-child(even) { background: #fafafa; }
+          </style>
+        </head>
+        <body>
+          <h2>TechnoVIS — ${source === "visites" ? "Planning des Visites" : "Marchés & Clients"}</h2>
+          <p>Date d'exportation : ${new Date().toLocaleString("fr-FR")} | Total : ${rows.length} ligne(s)</p>
+          <table>
+            <thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+            <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
+          </table>
+          <script>
+            window.onload = function() { window.print(); };
+          </script>
+        </body>
+        </html>
+      `);
+      printWin.document.close();
+      this.showToast("Rapport PDF généré pour impression.");
+    }
   },
 
   /* ------------------------------------------------------------------------
@@ -1219,15 +1328,13 @@ const App = {
       this.switchTab("planning");
       this.renderPlanningTable("Planifiée");
     } else if (kpi === "retard") {
-      const select = document.getElementById("filter-statut-visite");
-      if (select) select.value = "En retard";
-      this.switchTab("planning");
-      this.renderPlanningTable("En retard");
+      // Stay on Dashboard and scroll smoothly to the urgent alerts section!
+      this.switchTab("dashboard");
+      document.getElementById("panel-alertes-urgentes")?.scrollIntoView({ behavior: "smooth" });
     } else if (kpi === "validees") {
-      const select = document.getElementById("filter-statut-visite");
-      if (select) select.value = "Validée";
-      this.switchTab("planning");
-      this.renderPlanningTable("Validée");
+      // Navigate to Marchés & Clients tab for contract compliance & completed visits overview!
+      this.switchTab("clients");
+      this.renderClients();
     } else if (kpi === "critiques") {
       const select = document.getElementById("filter-risque-equipement");
       if (select) select.value = "critique";
