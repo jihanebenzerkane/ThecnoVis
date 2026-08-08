@@ -142,15 +142,20 @@ const App = {
       document.body.classList.toggle("sidebar-collapsed");
     });
 
-    // KPI metric cards — click to open detail drawer
+    // KPI metric cards — click to navigate to route & open drawer
     document.querySelectorAll(".metric-card-clickable").forEach(card => {
       card.addEventListener("click", () => {
         const kpi = card.getAttribute("data-kpi");
-        if (kpi) this.openKpiDrawer(kpi);
+        if (kpi) this.handleKpiCardClick(kpi);
       });
     });
     document.getElementById("kpi-drawer-close")?.addEventListener("click", () => this.closeKpiDrawer());
     document.getElementById("kpi-drawer-backdrop")?.addEventListener("click", () => this.closeKpiDrawer());
+
+    // Filtre risque équipements
+    document.getElementById("filter-risque-equipement")?.addEventListener("change", (e) => {
+      this.renderEquipements(e.target.value);
+    });
 
     // Bouton d'actualisation
     document.getElementById("btn-refresh-data")?.addEventListener("click", () => {
@@ -485,13 +490,15 @@ const App = {
     if (!tbody) return;
     tbody.innerHTML = "";
 
+    const activeFilter = filterStatut || document.getElementById("filter-statut-visite")?.value || "";
+
     let list = this.state.visites;
-    if (filterStatut) {
-      list = list.filter(v => v.statut === filterStatut);
+    if (activeFilter) {
+      list = list.filter(v => (v.statut || "").toLowerCase() === activeFilter.toLowerCase());
     }
 
     if (list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">Aucune visite trouvée.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">Aucune visite trouvée pour ce filtre.</td></tr>`;
       return;
     }
 
@@ -518,12 +525,28 @@ const App = {
   /* ------------------------------------------------------------------------
    * 5. EQUIPEMENTS VIEW & SCORING GAUGES
    * ------------------------------------------------------------------------ */
-  renderEquipements() {
+  renderEquipements(filterRisk = "") {
     const tbody = document.getElementById("table-equipements-body");
     if (!tbody) return;
     tbody.innerHTML = "";
 
-    this.state.equipements.forEach(e => {
+    const activeFilter = filterRisk || document.getElementById("filter-risque-equipement")?.value || "";
+
+    let list = this.state.equipements;
+    if (activeFilter === "critique") {
+      list = list.filter(e => (e.scoreRisque ?? 0) >= 70);
+    } else if (activeFilter === "moyen") {
+      list = list.filter(e => (e.scoreRisque ?? 0) >= 40 && (e.scoreRisque ?? 0) < 70);
+    } else if (activeFilter === "faible") {
+      list = list.filter(e => (e.scoreRisque ?? 0) < 40);
+    }
+
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Aucun équipement trouvé pour ce filtre.</td></tr>`;
+      return;
+    }
+
+    list.forEach(e => {
       const tr = document.createElement("tr");
       const scoreClass = e.scoreRisque >= 70 ? "score-high" : (e.scoreRisque >= 40 ? "score-med" : "score-low");
       const dateVisite = new Date(e.derniereVisite).toLocaleDateString("fr-FR");
@@ -1178,6 +1201,42 @@ const App = {
 
     window.open(url, "_blank");
     this.showToast(`Export ${format.toUpperCase()} en cours de téléchargement…`);
+  },
+
+  /* ------------------------------------------------------------------------
+   * KPI CARD NAVIGATION & ROUTING
+   * ------------------------------------------------------------------------ */
+
+  handleKpiCardClick(kpi) {
+    if (kpi === "total") {
+      const select = document.getElementById("filter-statut-visite");
+      if (select) select.value = "";
+      this.switchTab("planning");
+      this.renderPlanningTable("");
+    } else if (kpi === "planifiees") {
+      const select = document.getElementById("filter-statut-visite");
+      if (select) select.value = "Planifiée";
+      this.switchTab("planning");
+      this.renderPlanningTable("Planifiée");
+    } else if (kpi === "retard") {
+      const select = document.getElementById("filter-statut-visite");
+      if (select) select.value = "En retard";
+      this.switchTab("planning");
+      this.renderPlanningTable("En retard");
+    } else if (kpi === "validees") {
+      const select = document.getElementById("filter-statut-visite");
+      if (select) select.value = "Validée";
+      this.switchTab("planning");
+      this.renderPlanningTable("Validée");
+    } else if (kpi === "critiques") {
+      const select = document.getElementById("filter-risque-equipement");
+      if (select) select.value = "critique";
+      this.switchTab("equipements");
+      this.renderEquipements("critique");
+    }
+
+    // Also open the slide-in detail drawer for rich overview
+    this.openKpiDrawer(kpi);
   },
 
   /* ------------------------------------------------------------------------

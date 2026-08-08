@@ -283,7 +283,15 @@
         <div class="section-panel">
           <div class="panel-header">
             <span class="panel-title">Parc d'Équipements — Scoring Risque MTBF</span>
-            <button class="btn btn-primary btn-sm" id="btn-open-modal-equipement">+ Ajouter</button>
+            <div style="display:flex; gap:8px;">
+              <select class="form-control" id="filter-risque-equipement" style="width:auto; padding:7px 12px; font-size:0.8rem;">
+                <option value="">Tous les risques</option>
+                <option value="critique">Critique (≥ 70)</option>
+                <option value="moyen">Moyen (40-69)</option>
+                <option value="faible">Faible (&lt; 40)</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="btn-open-modal-equipement">+ Ajouter</button>
+            </div>
           </div>
           <div class="table-responsive">
             <table class="data-table">
