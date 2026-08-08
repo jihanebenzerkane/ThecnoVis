@@ -142,6 +142,16 @@ const App = {
       document.body.classList.toggle("sidebar-collapsed");
     });
 
+    // KPI metric cards — click to open detail drawer
+    document.querySelectorAll(".metric-card-clickable").forEach(card => {
+      card.addEventListener("click", () => {
+        const kpi = card.getAttribute("data-kpi");
+        if (kpi) this.openKpiDrawer(kpi);
+      });
+    });
+    document.getElementById("kpi-drawer-close")?.addEventListener("click", () => this.closeKpiDrawer());
+    document.getElementById("kpi-drawer-backdrop")?.addEventListener("click", () => this.closeKpiDrawer());
+
     // Bouton d'actualisation
     document.getElementById("btn-refresh-data")?.addEventListener("click", () => {
       this.loadAllData();
@@ -1168,5 +1178,142 @@ const App = {
 
     window.open(url, "_blank");
     this.showToast(`Export ${format.toUpperCase()} en cours de téléchargement…`);
+  },
+
+  /* ------------------------------------------------------------------------
+   * KPI DETAIL DRAWER
+   * ------------------------------------------------------------------------ */
+
+  openKpiDrawer(kpi) {
+    const drawer = document.getElementById("kpi-drawer");
+    const backdrop = document.getElementById("kpi-drawer-backdrop");
+    const title = document.getElementById("kpi-drawer-title");
+    const subtitle = document.getElementById("kpi-drawer-subtitle");
+    const body = document.getElementById("kpi-drawer-body");
+
+    if (!drawer) return;
+
+    let items = [];
+    let drawerTitle = "";
+    let drawerSub = "";
+    let renderFn;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const badgeColor = { "Planifiée": "#0277bd", "Validée": "#2e7d32", "En Retard": "#c62828", "En Révision": "#e65100" };
+    const badgeBg   = { "Planifiée": "#e3f2fd", "Validée": "#e8f5e9", "En Retard": "#fdecea", "En Révision": "#fff3e0" };
+
+    const visitCard = (v) => {
+      const date = v.datePrevue ? new Date(v.datePrevue).toLocaleDateString("fr-FR") : "—";
+      const realise = v.dateRealisee ? new Date(v.dateRealisee).toLocaleDateString("fr-FR") : null;
+      const color = badgeColor[v.statut] || "#555";
+      const bg    = badgeBg[v.statut]   || "#eee";
+      return `
+        <div class="drawer-item">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="drawer-item-title">${v.reference || "—"}</span>
+            <span class="badge" style="background:${bg};color:${color};">${v.statut}</span>
+          </div>
+          <div class="drawer-item-meta">
+            <span class="drawer-item-tag">📋 ${v.typeVisite || "—"}</span>
+            <span class="drawer-item-tag">🔧 ${v.equipementNom || v.equipement?.nom || "—"}</span>
+            <span class="drawer-item-tag">🏢 ${v.clientNom || "—"}</span>
+            <span class="drawer-item-tag">📍 ${v.siteNom || "—"}</span>
+            <span class="drawer-item-tag">👷 ${v.technicienAssigne || "Non assigné"}</span>
+            <span class="drawer-item-tag">📅 Prévue : ${date}</span>
+            ${realise ? `<span class="drawer-item-tag">✅ Réalisée : ${realise}</span>` : ""}
+            ${v.scorePriorite !== undefined ? `<span class="drawer-item-tag">⚡ Priorité : ${v.scorePriorite}</span>` : ""}
+          </div>
+          ${v.rapportTechnique ? `<div style="margin-top:6px;font-size:var(--text-xs);color:var(--text-secondary);border-left:2px solid var(--border);padding-left:8px;">${v.rapportTechnique.slice(0, 120)}${v.rapportTechnique.length > 120 ? "…" : ""}</div>` : ""}
+        </div>`;
+    };
+
+    const equipCard = (e) => {
+      const score = e.scoreRisque ?? 0;
+      const riskColor = score >= 70 ? "#e05a5a" : score >= 40 ? "#f5a623" : "#34c38f";
+      const riskBg    = score >= 70 ? "#fdecea"  : score >= 40 ? "#fff3e0"  : "#e8f5e9";
+      const riskLabel = score >= 70 ? "Critique"  : score >= 40 ? "Moyen"    : "Faible";
+      return `
+        <div class="drawer-item">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="drawer-item-title">${e.nom || "—"}</span>
+            <span class="drawer-item-risk" style="background:${riskBg};color:${riskColor};">⚠ ${riskLabel} — ${score}</span>
+          </div>
+          <div class="drawer-item-meta">
+            <span class="drawer-item-tag">🔖 ${e.serialNumber || "N/S"}</span>
+            <span class="drawer-item-tag">🏭 ${e.typeEquipement || "—"}</span>
+            <span class="drawer-item-tag">📍 ${e.siteNom || "—"}</span>
+            <span class="drawer-item-tag">🏢 ${e.clientNom || "—"}</span>
+            ${e.marqueModele ? `<span class="drawer-item-tag">🔩 ${e.marqueModele}</span>` : ""}
+            ${e.dateDerniereVisite ? `<span class="drawer-item-tag">🕐 Dernière visite : ${new Date(e.dateDerniereVisite).toLocaleDateString("fr-FR")}</span>` : ""}
+          </div>
+        </div>`;
+    };
+
+    switch (kpi) {
+      case "total":
+        drawerTitle = "Toutes les Visites";
+        drawerSub = `${this.state.visites.length} visite(s) au total`;
+        items = this.state.visites;
+        renderFn = visitCard;
+        break;
+
+      case "planifiees":
+        drawerTitle = "Visites Planifiées";
+        items = this.state.visites.filter(v => v.statut === "Planifiée");
+        drawerSub = `${items.length} intervention(s) à venir`;
+        renderFn = visitCard;
+        break;
+
+      case "retard":
+        drawerTitle = "⚠ Visites En Retard";
+        items = this.state.visites.filter(v => {
+          if (v.statut === "En Retard") return true;
+          if (v.statut === "Planifiée" && v.datePrevue) {
+            return new Date(v.datePrevue) < today;
+          }
+          return false;
+        });
+        drawerSub = `${items.length} intervention(s) urgente(s) — action requise`;
+        renderFn = visitCard;
+        break;
+
+      case "critiques":
+        drawerTitle = "Équipements Critiques";
+        items = this.state.equipements.filter(e => (e.scoreRisque ?? 0) >= 70)
+          .sort((a, b) => (b.scoreRisque ?? 0) - (a.scoreRisque ?? 0));
+        drawerSub = `${items.length} équipement(s) avec score de risque ≥ 70`;
+        renderFn = equipCard;
+        break;
+
+      case "validees":
+        drawerTitle = "Visites Validées";
+        items = this.state.visites.filter(v => v.statut === "Validée");
+        drawerSub = `${items.length} visite(s) validée(s)`;
+        renderFn = visitCard;
+        break;
+    }
+
+    // Set header
+    title.textContent = drawerTitle;
+    subtitle.textContent = drawerSub;
+
+    // Render body
+    if (items.length === 0) {
+      body.innerHTML = `<div class="drawer-empty">✅ Aucun élément dans cette catégorie.</div>`;
+    } else {
+      body.innerHTML = items.map(renderFn).join("");
+    }
+
+    // Open
+    drawer.classList.add("open");
+    backdrop.classList.add("open");
+  },
+
+  closeKpiDrawer() {
+    document.getElementById("kpi-drawer")?.classList.remove("open");
+    document.getElementById("kpi-drawer-backdrop")?.classList.remove("open");
   }
 };
+
