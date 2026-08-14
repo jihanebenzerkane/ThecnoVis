@@ -749,6 +749,7 @@ const App = {
   },
 
   openModal(modalId) {
+    this.closeKpiDrawer();
     const modal = document.getElementById(modalId);
     if (modal) modal.classList.add("active");
   },
