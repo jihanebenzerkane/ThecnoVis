@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using TechnoVIS.Data;
 using TechnoVIS.Services;
-
 using QuestPDF.Infrastructure;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +22,32 @@ builder.Services.AddScoped<ExcelImportService>();
 builder.Services.AddScoped<PdfExportService>();
 builder.Services.AddScoped<CsvExportService>();
 
+// JWT Authentication Configuration
+var jwtKey = builder.Configuration["Jwt:SecretKey"] 
+    ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY") 
+    ?? "TechnoVIS_Super_Secret_JWT_Key_2026_ECS_Maintenance_Security_Token!";
+
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "TechnoVIS_API";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "TechnoVIS_App";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
 
 // CORS configuration for local development
 builder.Services.AddCors(options =>
@@ -73,6 +101,8 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 // Health Check Endpoint
