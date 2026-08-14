@@ -70,13 +70,15 @@ if (string.IsNullOrWhiteSpace(connectionString))
 if (!string.IsNullOrWhiteSpace(connectionString) && !connectionString.Contains("technovis.db"))
 {
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseSqlServer(connectionString));
+        options.UseSqlServer(connectionString)
+               .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 }
 else
 {
     // SQLite local database provider for seamless local execution
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseSqlite("Data Source=technovis.db"));
+        options.UseSqlite("Data Source=technovis.db")
+               .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 }
 
 var app = builder.Build();
