@@ -17,10 +17,15 @@ namespace TechnoVIS.Data
         public DbSet<Equipement> Equipements => Set<Equipement>();
         public DbSet<Visite> Visites => Set<Visite>();
         public DbSet<Technicien> Techniciens => Set<Technicien>();
+        public DbSet<Utilisateur> Utilisateurs => Set<Utilisateur>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<Utilisateur>()
+                .HasIndex(u => u.Email)
+                .IsUnique();
 
             // Seed Clients
             modelBuilder.Entity<Client>().HasData(
@@ -68,6 +73,20 @@ namespace TechnoVIS.Data
                 new Technicien { Id = 4, Nom = "Mansouri", Prenom = "Youssef", Specialites = "HVAC", SiteRattacheId = 1, ChargeActuelle = 0, Disponible = false },
                 new Technicien { Id = 5, Nom = "Tazi", Prenom = "Othmane", Specialites = "Groupe Électrogène", SiteRattacheId = 2, ChargeActuelle = 2, Disponible = true }
             );
+
+            // Seed Utilisateurs (Accounts with PasswordHasher)
+            var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<Utilisateur>();
+
+            var uAdmin = new Utilisateur { Id = 1, Email = "admin@ecs.ma", Role = "Responsable", TechnicienId = null, DateCreation = new DateTime(2026, 1, 1) };
+            uAdmin.PasswordHash = hasher.HashPassword(uAdmin, "Admin123!");
+
+            var uAmine = new Utilisateur { Id = 2, Email = "amine@ecs.ma", Role = "Technicien", TechnicienId = 1, DateCreation = new DateTime(2026, 1, 1) };
+            uAmine.PasswordHash = hasher.HashPassword(uAmine, "Amine123!");
+
+            var uHassan = new Utilisateur { Id = 3, Email = "hassan@ecs.ma", Role = "Technicien", TechnicienId = 2, DateCreation = new DateTime(2026, 1, 1) };
+            uHassan.PasswordHash = hasher.HashPassword(uHassan, "Hassan123!");
+
+            modelBuilder.Entity<Utilisateur>().HasData(uAdmin, uAmine, uHassan);
         }
     }
 }
