@@ -88,6 +88,28 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
+
+    // Conditional initialization: Create default admin account only if table is empty
+    if (!dbContext.Utilisateurs.Any())
+    {
+        var defaultAdminEmail = app.Configuration["Admin:Email"] ?? "admin@ecs.ma";
+        var defaultAdminPassword = app.Configuration["Admin:Password"] 
+            ?? Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") 
+            ?? "Admin123!";
+
+        var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<TechnoVIS.Models.Utilisateur>();
+        var adminUser = new TechnoVIS.Models.Utilisateur
+        {
+            Email = defaultAdminEmail,
+            Role = "Responsable",
+            TechnicienId = null,
+            DateCreation = DateTime.UtcNow
+        };
+        adminUser.PasswordHash = hasher.HashPassword(adminUser, defaultAdminPassword);
+
+        dbContext.Utilisateurs.Add(adminUser);
+        dbContext.SaveChanges();
+    }
 }
 
 // HTTP Pipeline

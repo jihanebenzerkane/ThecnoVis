@@ -9,7 +9,12 @@ namespace TechnoVIS.Models
         public string TypeVisite { get; set; } = "Préventive"; // Préventive, Curative, Audit, Diagnostic
         public int EquipementId { get; set; }
         public Equipement? Equipement { get; set; }
-        public string TechnicienAssigne { get; set; } = string.Empty;
+        public int? TechnicienId { get; set; }
+        public Technicien? Technicien { get; set; }
+
+        public int? MarcheId { get; set; }
+        public Marche? Marche { get; set; }
+
         public DateTime DatePrevue { get; set; }
         public DateTime? DateRealisee { get; set; }
         public int DureeEstimeeMinutes { get; set; } = 120;

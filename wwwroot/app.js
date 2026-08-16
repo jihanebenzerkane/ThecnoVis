@@ -476,7 +476,7 @@ const App = {
         const ev = document.createElement("div");
         ev.className = `calendar-event ${v.statut === 'En retard' ? 'event-retard' : ''}`;
         ev.textContent = `${v.reference} - ${v.equipementNom}`;
-        ev.title = `${v.typeVisite} sur ${v.equipementNom} (${v.technicienAssigne})`;
+        ev.title = `${v.typeVisite} sur ${v.equipementNom} (${v.technicienNom || 'Non assigné'})`;
         ev.onclick = () => this.openRapportModal(v.id);
         cell.appendChild(ev);
       });
@@ -510,7 +510,7 @@ const App = {
         <td>${v.typeVisite}</td>
         <td>${v.equipementNom}</td>
         <td><span style="color: var(--text-secondary);">${v.clientNom}</span><br><small>${v.siteNom}</small></td>
-        <td>${v.technicienAssigne}</td>
+        <td>${v.technicienNom || 'Non assigné'}</td>
         <td>${dateFormatted}</td>
         <td><strong>${v.scorePriorite}</strong></td>
         <td><span class="badge ${this.getBadgeClass(v.statut)}">${v.statut}</span></td>
@@ -625,8 +625,20 @@ const App = {
     if (!tbody) return;
     tbody.innerHTML = "";
 
-    // Filtrer les visites du technicien connecté
-    const mesVisites = this.state.visites.filter(v => v.technicienAssigne.includes("Amine") || v.technicienAssigne.includes("Hassan"));
+    // Filtrer les visites du technicien connecté ou afficher les visites assignées
+    const currentUser = this.state.currentUser;
+    let mesVisites = this.state.visites;
+
+    if (currentUser && currentUser.technicienId) {
+      mesVisites = mesVisites.filter(v => v.technicienId === currentUser.technicienId);
+    } else if (currentUser && currentUser.role === "Technicien") {
+      mesVisites = mesVisites.filter(v => (v.technicienNom || "").toLowerCase().includes((currentUser.nomComplet || "").toLowerCase()));
+    }
+
+    if (mesVisites.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Aucune visite assignée pour le moment.</td></tr>`;
+      return;
+    }
 
     mesVisites.forEach(v => {
       const tr = document.createElement("tr");
@@ -710,8 +722,8 @@ const App = {
     suggestions.forEach(s => {
       const t = s.technicien;
       const opt = document.createElement("option");
-      // Store full name as the value (matches TechnicienAssigne field in backend)
-      opt.value = `${t.prenom} ${t.nom}`;
+      // Store integer Id as the value (matches TechnicienId field in backend)
+      opt.value = t.id;
       const scoreLabel = s.score > 0 ? ` — ${s.score}%` : "";
       const disponLabel = t.disponible ? "" : " ⚠ Indisponible";
       opt.textContent = `${t.prenom} ${t.nom}${scoreLabel}${disponLabel}`;
@@ -780,13 +792,14 @@ const App = {
     e.preventDefault();
     const equipementId = parseInt(document.getElementById("form-visite-equipement").value);
     const typeVisite = document.getElementById("form-visite-type").value;
-    const technicien = document.getElementById("form-visite-technicien").value;
+    const techVal = document.getElementById("form-visite-technicien").value;
+    const technicienId = techVal ? parseInt(techVal) : null;
     const datePrevue = document.getElementById("form-visite-date").value;
 
     const payload = {
       equipementId,
       typeVisite,
-      technicienAssigne: technicien,
+      technicienId: technicienId,
       datePrevue: new Date(datePrevue).toISOString(),
       statut: "Planifiée"
     };
@@ -808,7 +821,8 @@ const App = {
         equipementNom: eq ? eq.nom : "Équipement",
         siteNom: eq ? eq.siteNom : "Site",
         clientNom: eq ? eq.clientNom : "Client",
-        technicienAssigne: technicien,
+        technicienId: technicienId,
+        technicienNom: "Technicien assigné",
         datePrevue,
         statut: "Planifiée",
         scorePriorite: 70.0
@@ -1129,7 +1143,7 @@ const App = {
           v.typeVisite,
           v.equipementNom || "",
           `${v.clientNom || ""} / ${v.siteNom || ""}`,
-          v.technicienAssigne || "—",
+          v.technicienNom || "—",
           v.datePrevue ? new Date(v.datePrevue).toLocaleDateString("fr-FR") : "—",
           v.statut
         ]);
@@ -1237,13 +1251,13 @@ const App = {
         v.typeVisite || "",
         v.equipementNom || "",
         `${v.clientNom || ""} / ${v.siteNom || ""}`,
-        v.technicienAssigne || "Non assigné",
+        v.technicienNom || "Non assigné",
         v.datePrevue ? new Date(v.datePrevue).toLocaleDateString("fr-FR") : "",
         v.statut || ""
       ]);
     } else {
       filename = `Marches_Export_${dateStr}`;
-      headers = ["Référence", "Client", "Date Début", "Date Fin", "Type Contrat", "Visites/An", "Réalisées", "PV Requis", "Facture Requise", "Statut"];
+      headers = ["Référence", "Client", "Date Début", "Date Fin", "Type Contrat", "Visites/An", "Réalisées", "PV Requis", "Facture Requis", "Statut"];
       rows = (this.state.marches || []).map(m => [
         m.libelle || m.codeMarche || "",
         m.clientNom || "",
@@ -1387,7 +1401,7 @@ const App = {
             <span class="drawer-item-tag">🔧 ${v.equipementNom || v.equipement?.nom || "—"}</span>
             <span class="drawer-item-tag">🏢 ${v.clientNom || "—"}</span>
             <span class="drawer-item-tag">📍 ${v.siteNom || "—"}</span>
-            <span class="drawer-item-tag">👷 ${v.technicienAssigne || "Non assigné"}</span>
+            <span class="drawer-item-tag">👷 ${v.technicienNom || "Non assigné"}</span>
             <span class="drawer-item-tag">📅 Prévue : ${date}</span>
             ${realise ? `<span class="drawer-item-tag">✅ Réalisée : ${realise}</span>` : ""}
             ${v.scorePriorite !== undefined ? `<span class="drawer-item-tag">⚡ Priorité : ${v.scorePriorite}</span>` : ""}

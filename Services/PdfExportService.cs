@@ -96,7 +96,8 @@ namespace TechnoVIS.Services
                     table.Cell().Element(BlockValue).Text(visite.Equipement?.SerialNumber ?? "N/A");
 
                     table.Cell().Element(BlockHeader).Text("Technicien :");
-                    table.Cell().Element(BlockValue).Text(visite.TechnicienAssigne ?? "N/A");
+                    var techName = visite.Technicien != null ? $"{visite.Technicien.Prenom} {visite.Technicien.Nom}".Trim() : "N/A";
+                    table.Cell().Element(BlockValue).Text(techName);
 
                     table.Cell().Element(BlockHeader).Text("Date réalisée :");
                     table.Cell().Element(BlockValue).Text(visite.DateRealisee?.ToString("dd/MM/yyyy HH:mm") ?? "N/A");

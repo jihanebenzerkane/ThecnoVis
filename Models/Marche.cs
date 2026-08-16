@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace TechnoVIS.Models
 {
@@ -15,6 +16,8 @@ namespace TechnoVIS.Models
         public int VisitesAnnuellesPrevues { get; set; } = 12;
         public int VisitesRealisees { get; set; } = 0;
         public string Statut { get; set; } = "Actif"; // Actif, En Renouvellement, Expiré
+
+        public List<Visite> Visites { get; set; } = new();
 
         // ── Fields added for Excel import ──────────────────────────────────
         /// <summary>Type de contrat libre (e.g. "Maintenance") — source: colonne "Type de contrat"</summary>

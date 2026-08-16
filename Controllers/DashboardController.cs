@@ -49,6 +49,11 @@ namespace TechnoVIS.Controllers
                 })
                 .ToListAsync();
 
+            var totalMarches = await _context.Marches.CountAsync();
+            var marchesActifs = await _context.Marches.CountAsync(m => m.Statut == "Actif");
+            var totalClients = await _context.Clients.CountAsync();
+            var totalTechniciens = await _context.Techniciens.CountAsync();
+
             return Ok(new
             {
                 TotalVisites = totalVisites,
@@ -58,6 +63,10 @@ namespace TechnoVIS.Controllers
                 TotalEquipements = totalEquipements,
                 EquipementsCritiques = equipementsCritiques,
                 TauxConformite = Math.Round(tauxConformite, 1),
+                TotalMarches = totalMarches,
+                MarchesActifs = marchesActifs,
+                TotalClients = totalClients,
+                TotalTechniciens = totalTechniciens,
                 AlertesUrgent = alertesVisites
             });
         }

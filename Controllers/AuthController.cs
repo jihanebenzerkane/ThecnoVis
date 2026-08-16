@@ -97,6 +97,47 @@ namespace TechnoVIS.Controllers
                 Expiration = expires
             });
         }
+
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] RegisterDto model)
+        {
+            if (!ModelState.IsValid || string.IsNullOrWhiteSpace(model.Email) || string.IsNullOrWhiteSpace(model.Password))
+            {
+                return BadRequest(new { message = "Email et mot de passe requis." });
+            }
+
+            var existing = await _context.Utilisateurs
+                .AnyAsync(u => u.Email.ToLower() == model.Email.Trim().ToLower());
+
+            if (existing)
+            {
+                return BadRequest(new { message = "Un utilisateur avec cet email existe déjà." });
+            }
+
+            var user = new Utilisateur
+            {
+                Email = model.Email.Trim().ToLower(),
+                Role = string.IsNullOrWhiteSpace(model.Role) ? "Technicien" : model.Role,
+                TechnicienId = model.TechnicienId,
+                DateCreation = DateTime.UtcNow
+            };
+
+            var hasher = new PasswordHasher<Utilisateur>();
+            user.PasswordHash = hasher.HashPassword(user, model.Password);
+
+            _context.Utilisateurs.Add(user);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Utilisateur créé avec succès.", id = user.Id, email = user.Email, role = user.Role });
+        }
+    }
+
+    public class RegisterDto
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string Role { get; set; } = "Technicien"; // "Responsable" or "Technicien"
+        public int? TechnicienId { get; set; }
     }
 
     public class LoginDto

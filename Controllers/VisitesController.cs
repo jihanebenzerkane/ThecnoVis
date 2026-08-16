@@ -26,21 +26,28 @@ namespace TechnoVIS.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetVisites([FromQuery] string? statut, [FromQuery] string? technicien)
+        public async Task<IActionResult> GetVisites([FromQuery] string? statut, [FromQuery] int? technicienId, [FromQuery] string? technicien)
         {
             var query = _context.Visites
                 .Include(v => v.Equipement)
                 .ThenInclude(e => e!.Site)
                 .ThenInclude(s => s!.Client)
+                .Include(v => v.Technicien)
+                .Include(v => v.Marche)
                 .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(statut))
             {
                 query = query.Where(v => v.Statut == statut);
             }
+            if (technicienId.HasValue)
+            {
+                query = query.Where(v => v.TechnicienId == technicienId.Value);
+            }
             if (!string.IsNullOrWhiteSpace(technicien))
             {
-                query = query.Where(v => v.TechnicienAssigne.Contains(technicien));
+                query = query.Where(v => v.Technicien != null &&
+                    (v.Technicien.Nom.Contains(technicien) || v.Technicien.Prenom.Contains(technicien)));
             }
 
             var result = await query
@@ -55,7 +62,10 @@ namespace TechnoVIS.Controllers
                     EquipementSerial = v.Equipement != null ? v.Equipement.SerialNumber : "",
                     SiteNom = v.Equipement != null && v.Equipement.Site != null ? v.Equipement.Site.NomSite : "",
                     ClientNom = v.Equipement != null && v.Equipement.Site != null && v.Equipement.Site.Client != null ? v.Equipement.Site.Client.NomSociete : "",
-                    v.TechnicienAssigne,
+                    v.TechnicienId,
+                    TechnicienNom = v.Technicien != null ? $"{v.Technicien.Prenom} {v.Technicien.Nom}".Trim() : "Non assigné",
+                    v.MarcheId,
+                    MarcheCode = v.Marche != null ? v.Marche.CodeMarche : "",
                     v.DatePrevue,
                     v.DateRealisee,
                     v.DureeEstimeeMinutes,
@@ -75,6 +85,9 @@ namespace TechnoVIS.Controllers
             var visite = await _context.Visites
                 .Include(v => v.Equipement)
                 .ThenInclude(e => e!.Site)
+                .ThenInclude(s => s!.Client)
+                .Include(v => v.Technicien)
+                .Include(v => v.Marche)
                 .FirstOrDefaultAsync(v => v.Id == id);
 
             if (visite == null) return NotFound(new { message = "Visite non trouvée." });
@@ -94,7 +107,13 @@ namespace TechnoVIS.Controllers
 
             if (string.IsNullOrWhiteSpace(model.Reference))
             {
-                model.Reference = $"VIS-{DateTime.Now.Year}-{new Random().Next(1000, 9999)}";
+                var year = DateTime.Now.Year;
+                var prefix = $"VIS-{year}-";
+                var maxNum = await _context.Visites
+                    .Where(v => v.Reference.StartsWith(prefix))
+                    .CountAsync();
+
+                model.Reference = $"{prefix}{(maxNum + 1):D4}";
             }
 
             _context.Visites.Add(model);
@@ -191,6 +210,7 @@ namespace TechnoVIS.Controllers
                 .Include(v => v.Equipement)
                 .ThenInclude(e => e!.Site)
                 .ThenInclude(s => s!.Client)
+                .Include(v => v.Technicien)
                 .AsQueryable();
 
             if (!string.IsNullOrEmpty(statut))
@@ -208,7 +228,7 @@ namespace TechnoVIS.Controllers
                 v.TypeVisite,
                 v.Equipement?.Nom ?? "",
                 $"{v.Equipement?.Site?.Client?.NomSociete} / {v.Equipement?.Site?.NomSite}",
-                v.TechnicienAssigne ?? "",
+                v.Technicien != null ? $"{v.Technicien.Prenom} {v.Technicien.Nom}" : "Non assigné",
                 v.DatePrevue.ToString("dd/MM/yyyy"),
                 v.Statut
             }).ToArray();
@@ -251,6 +271,7 @@ namespace TechnoVIS.Controllers
                 .Include(v => v.Equipement)
                 .ThenInclude(e => e!.Site)
                 .ThenInclude(s => s!.Client)
+                .Include(v => v.Technicien)
                 .FirstOrDefaultAsync(v => v.Id == id);
 
             if (visite == null) return NotFound(new { message = "Visite introuvable." });
