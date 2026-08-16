@@ -17,7 +17,7 @@ namespace TechnoVIS.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    CodeClient = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CodeClient = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     NomSociete = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ContactPrincipal = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     Email = table.Column<string>(type: "nvarchar(max)", nullable: false),
@@ -35,7 +35,7 @@ namespace TechnoVIS.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    CodeMarche = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CodeMarche = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     Libelle = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ClientId = table.Column<int>(type: "int", nullable: false),
                     DateDebut = table.Column<DateTime>(type: "datetime2", nullable: false),
@@ -71,7 +71,7 @@ namespace TechnoVIS.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    CodeSite = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CodeSite = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     NomSite = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ClientId = table.Column<int>(type: "int", nullable: false),
                     Adresse = table.Column<string>(type: "nvarchar(max)", nullable: false),
@@ -97,7 +97,7 @@ namespace TechnoVIS.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    SerialNumber = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    SerialNumber = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     Nom = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     Categorie = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     SiteId = table.Column<int>(type: "int", nullable: false),
@@ -173,7 +173,7 @@ namespace TechnoVIS.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    Reference = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Reference = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     TypeVisite = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     EquipementId = table.Column<int>(type: "int", nullable: false),
                     TechnicienId = table.Column<int>(type: "int", nullable: true),
@@ -210,6 +210,18 @@ namespace TechnoVIS.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_Clients_CodeClient",
+                table: "Clients",
+                column: "CodeClient",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Equipements_SerialNumber",
+                table: "Equipements",
+                column: "SerialNumber",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Equipements_SiteId",
                 table: "Equipements",
                 column: "SiteId");
@@ -220,9 +232,21 @@ namespace TechnoVIS.Migrations
                 column: "ClientId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Marches_CodeMarche",
+                table: "Marches",
+                column: "CodeMarche",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Sites_ClientId",
                 table: "Sites",
                 column: "ClientId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Sites_CodeSite",
+                table: "Sites",
+                column: "CodeSite",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Techniciens_SiteRattacheId",
@@ -249,6 +273,12 @@ namespace TechnoVIS.Migrations
                 name: "IX_Visites_MarcheId",
                 table: "Visites",
                 column: "MarcheId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Visites_Reference",
+                table: "Visites",
+                column: "Reference",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Visites_TechnicienId",

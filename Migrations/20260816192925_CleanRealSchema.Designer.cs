@@ -12,7 +12,7 @@ using TechnoVIS.Data;
 namespace TechnoVIS.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260816184354_CleanRealSchema")]
+    [Migration("20260816192925_CleanRealSchema")]
     partial class CleanRealSchema
     {
         /// <inheritdoc />
@@ -39,7 +39,7 @@ namespace TechnoVIS.Migrations
 
                     b.Property<string>("CodeClient")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("ContactPrincipal")
                         .IsRequired()
@@ -58,6 +58,9 @@ namespace TechnoVIS.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CodeClient")
+                        .IsUnique();
 
                     b.ToTable("Clients");
                 });
@@ -98,7 +101,7 @@ namespace TechnoVIS.Migrations
 
                     b.Property<string>("SerialNumber")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<int>("SiteId")
                         .HasColumnType("int");
@@ -108,6 +111,9 @@ namespace TechnoVIS.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("SerialNumber")
+                        .IsUnique();
 
                     b.HasIndex("SiteId");
 
@@ -127,7 +133,7 @@ namespace TechnoVIS.Migrations
 
                     b.Property<string>("CodeMarche")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("CommentaireImport")
                         .HasColumnType("nvarchar(max)");
@@ -183,6 +189,9 @@ namespace TechnoVIS.Migrations
 
                     b.HasIndex("ClientId");
 
+                    b.HasIndex("CodeMarche")
+                        .IsUnique();
+
                     b.ToTable("Marches");
                 });
 
@@ -207,7 +216,7 @@ namespace TechnoVIS.Migrations
 
                     b.Property<string>("CodeSite")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<double>("Latitude")
                         .HasColumnType("float");
@@ -226,6 +235,9 @@ namespace TechnoVIS.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ClientId");
+
+                    b.HasIndex("CodeSite")
+                        .IsUnique();
 
                     b.ToTable("Sites");
                 });
@@ -343,7 +355,7 @@ namespace TechnoVIS.Migrations
 
                     b.Property<string>("Reference")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<double>("ScorePriorite")
                         .HasColumnType("float");
@@ -364,6 +376,9 @@ namespace TechnoVIS.Migrations
                     b.HasIndex("EquipementId");
 
                     b.HasIndex("MarcheId");
+
+                    b.HasIndex("Reference")
+                        .IsUnique();
 
                     b.HasIndex("TechnicienId");
 

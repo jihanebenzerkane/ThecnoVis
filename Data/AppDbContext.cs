@@ -23,9 +23,29 @@ namespace TechnoVIS.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            // ── Index constraints ──────────────────────────────────────
+            // ── Unique Index constraints ───────────────────────────────
             modelBuilder.Entity<Utilisateur>()
                 .HasIndex(u => u.Email)
+                .IsUnique();
+
+            modelBuilder.Entity<Client>()
+                .HasIndex(c => c.CodeClient)
+                .IsUnique();
+
+            modelBuilder.Entity<Site>()
+                .HasIndex(s => s.CodeSite)
+                .IsUnique();
+
+            modelBuilder.Entity<Marche>()
+                .HasIndex(m => m.CodeMarche)
+                .IsUnique();
+
+            modelBuilder.Entity<Equipement>()
+                .HasIndex(e => e.SerialNumber)
+                .IsUnique();
+
+            modelBuilder.Entity<Visite>()
+                .HasIndex(v => v.Reference)
                 .IsUnique();
 
             // ── Visite → Technicien (FK, nullable) ─────────────────────

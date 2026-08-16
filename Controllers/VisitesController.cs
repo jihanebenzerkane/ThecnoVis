@@ -79,6 +79,65 @@ namespace TechnoVIS.Controllers
             return Ok(result);
         }
 
+        [HttpGet("mes-visites")]
+        public async Task<IActionResult> GetMesVisites([FromQuery] int? technicienId)
+        {
+            var techIdClaim = User.FindFirst("technicienId")?.Value;
+            var emailClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+            int? targetTechId = technicienId;
+            if (!targetTechId.HasValue && int.TryParse(techIdClaim, out var parsedId) && parsedId > 0)
+            {
+                targetTechId = parsedId;
+            }
+            else if (!targetTechId.HasValue && !string.IsNullOrWhiteSpace(emailClaim))
+            {
+                var tech = await _context.Techniciens.FirstOrDefaultAsync(t => t.Email == emailClaim);
+                targetTechId = tech?.Id;
+            }
+
+            var query = _context.Visites
+                .Include(v => v.Equipement)
+                .ThenInclude(e => e!.Site)
+                .ThenInclude(s => s!.Client)
+                .Include(v => v.Technicien)
+                .Include(v => v.Marche)
+                .AsQueryable();
+
+            if (targetTechId.HasValue)
+            {
+                query = query.Where(v => v.TechnicienId == targetTechId.Value);
+            }
+
+            var result = await query
+                .OrderBy(v => v.DatePrevue)
+                .Select(v => new
+                {
+                    v.Id,
+                    v.Reference,
+                    v.TypeVisite,
+                    v.EquipementId,
+                    EquipementNom = v.Equipement != null ? v.Equipement.Nom : "Inconnu",
+                    EquipementSerial = v.Equipement != null ? v.Equipement.SerialNumber : "",
+                    SiteNom = v.Equipement != null && v.Equipement.Site != null ? v.Equipement.Site.NomSite : "",
+                    ClientNom = v.Equipement != null && v.Equipement.Site != null && v.Equipement.Site.Client != null ? v.Equipement.Site.Client.NomSociete : "",
+                    v.TechnicienId,
+                    TechnicienNom = v.Technicien != null ? $"{v.Technicien.Prenom} {v.Technicien.Nom}".Trim() : "Non assigné",
+                    v.MarcheId,
+                    MarcheCode = v.Marche != null ? v.Marche.CodeMarche : "",
+                    v.DatePrevue,
+                    v.DateRealisee,
+                    v.DureeEstimeeMinutes,
+                    v.Statut,
+                    v.ScorePriorite,
+                    v.RapportTechnique,
+                    v.ActionsCorrectives
+                })
+                .ToListAsync();
+
+            return Ok(result);
+        }
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetVisiteById(int id)
         {

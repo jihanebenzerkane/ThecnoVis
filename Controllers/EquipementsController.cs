@@ -71,6 +71,15 @@ namespace TechnoVIS.Controllers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Equipement model)
         {
+            if (model == null) return BadRequest();
+
+            if (string.IsNullOrWhiteSpace(model.SerialNumber))
+            {
+                var count = await _context.Equipements.CountAsync();
+                var cat = string.IsNullOrWhiteSpace(model.Categorie) ? "EQ" : new string(model.Categorie.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper();
+                model.SerialNumber = $"EQ-{cat}-{(count + 1):D4}";
+            }
+
             model.ScoreRisque = _scoringService.CalculerScoreRisque(model);
             _context.Equipements.Add(model);
             await _context.SaveChangesAsync();

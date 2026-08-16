@@ -25,7 +25,7 @@ builder.Services.AddScoped<CsvExportService>();
 // JWT Authentication Configuration
 var jwtKey = builder.Configuration["Jwt:SecretKey"] 
     ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY") 
-    ?? "TechnoVIS_Super_Secret_JWT_Key_2026_ECS_Maintenance_Security_Token!";
+    ?? throw new InvalidOperationException("La clé secrète JWT (Jwt:SecretKey ou JWT_SECRET_KEY) est requise.");
 
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "TechnoVIS_API";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "TechnoVIS_App";
@@ -60,26 +60,14 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Database configuration
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
-}
+// Database configuration (SQL Server mandatory)
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+    ?? throw new InvalidOperationException("La chaîne de connexion SQL Server (DefaultConnection ou DB_CONNECTION_STRING) est requise.");
 
-if (!string.IsNullOrWhiteSpace(connectionString) && !connectionString.Contains("technovis.db"))
-{
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseSqlServer(connectionString)
-               .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
-}
-else
-{
-    // SQLite local database provider for seamless local execution
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseSqlite("Data Source=technovis.db")
-               .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
-}
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(connectionString)
+           .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 
 var app = builder.Build();
 
@@ -92,10 +80,12 @@ using (var scope = app.Services.CreateScope())
     // Conditional initialization: Create default admin account only if table is empty
     if (!dbContext.Utilisateurs.Any())
     {
-        var defaultAdminEmail = app.Configuration["Admin:Email"] ?? "admin@ecs.ma";
-        var defaultAdminPassword = app.Configuration["Admin:Password"] 
+        var defaultAdminEmail = app.Configuration["Admin:Email"] 
+            ?? Environment.GetEnvironmentVariable("ADMIN_EMAIL") 
+            ?? "admin@ecs.ma";
+        var defaultAdminPassword = app.Configuration["Admin:DefaultPassword"] 
             ?? Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") 
-            ?? "Admin123!";
+            ?? throw new InvalidOperationException("Le mot de passe initial de l'administrateur (Admin:DefaultPassword ou ADMIN_DEFAULT_PASSWORD) doit être configuré.");
 
         var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<TechnoVIS.Models.Utilisateur>();
         var adminUser = new TechnoVIS.Models.Utilisateur

@@ -68,7 +68,7 @@ namespace TechnoVIS.Controllers
 
             var secretKey = _configuration["Jwt:SecretKey"] 
                 ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY") 
-                ?? "TechnoVIS_Super_Secret_JWT_Key_2026_ECS_Maintenance_Security_Token!";
+                ?? throw new InvalidOperationException("La clé secrète JWT n'est pas configurée.");
             
             var issuer = _configuration["Jwt:Issuer"] ?? "TechnoVIS_API";
             var audience = _configuration["Jwt:Audience"] ?? "TechnoVIS_App";

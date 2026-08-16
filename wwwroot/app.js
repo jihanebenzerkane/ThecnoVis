@@ -605,7 +605,7 @@ const App = {
         const tr = document.createElement("tr");
         const sitesCount = c.sites ? c.sites.length : 1;
         tr.innerHTML = `
-          <td><code>${c.codeClient}</code></td>
+        <td><code>${c.codeClient}</code></td>
           <td><strong>${c.nomSociete}</strong></td>
           <td>${c.contactPrincipal}</td>
           <td>${c.email}</td>
@@ -620,22 +620,25 @@ const App = {
   /* ------------------------------------------------------------------------
    * 7. TECHNICIEN FIELD VIEW
    * ------------------------------------------------------------------------ */
-  renderTechnicien() {
+  async renderTechnicien() {
     const tbody = document.getElementById("table-technicien-body");
     if (!tbody) return;
     tbody.innerHTML = "";
 
-    // Filtrer les visites du technicien connecté ou afficher les visites assignées
     const currentUser = this.state.currentUser;
-    let mesVisites = this.state.visites;
+    let endpoint = "/api/visites";
+    if (currentUser && currentUser.technicienId) {
+      endpoint = `/api/visites/mes-visites?technicienId=${currentUser.technicienId}`;
+    }
+
+    let mesVisites = await this.fetchApi(endpoint);
+    if (!mesVisites) mesVisites = this.state.visites;
 
     if (currentUser && currentUser.technicienId) {
       mesVisites = mesVisites.filter(v => v.technicienId === currentUser.technicienId);
-    } else if (currentUser && currentUser.role === "Technicien") {
-      mesVisites = mesVisites.filter(v => (v.technicienNom || "").toLowerCase().includes((currentUser.nomComplet || "").toLowerCase()));
     }
 
-    if (mesVisites.length === 0) {
+    if (!mesVisites || mesVisites.length === 0) {
       tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Aucune visite assignée pour le moment.</td></tr>`;
       return;
     }
@@ -811,23 +814,8 @@ const App = {
     });
 
     if (!result) {
-      // Fallback local addition if offline
-      const eq = this.state.equipements.find(x => x.id === equipementId);
-      result = {
-        id: Date.now(),
-        reference: `VIS-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-        typeVisite,
-        equipementId,
-        equipementNom: eq ? eq.nom : "Équipement",
-        siteNom: eq ? eq.siteNom : "Site",
-        clientNom: eq ? eq.clientNom : "Client",
-        technicienId: technicienId,
-        technicienNom: "Technicien assigné",
-        datePrevue,
-        statut: "Planifiée",
-        scorePriorite: 70.0
-      };
-      this.state.visites.unshift(result);
+      this.showToast("Erreur lors de la planification de la visite sur le serveur.", "error");
+      return;
     }
 
     this.closeModal("modal-visite");
@@ -849,6 +837,11 @@ const App = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
+
+    if (!res) {
+      this.showToast("Erreur lors de la mise à jour du rapport sur le serveur.", "error");
+      return;
+    }
 
     // Update state locally
     const item = this.state.visites.find(v => v.id === id);
@@ -893,21 +886,8 @@ const App = {
     });
 
     if (!result) {
-      const client = this.state.clients.find(c => c.id === clientId);
-      result = {
-        id: Date.now(),
-        codeMarche: codeMarche || `MAR-2026-${Math.floor(100 + Math.random() * 900)}`,
-        libelle,
-        clientId,
-        clientNom: client ? client.nomSociete : "Client",
-        dateDebut,
-        dateFin,
-        slaHeures,
-        visitesAnnuellesPrevues,
-        visitesRealisees: 0,
-        statut
-      };
-      this.state.marches.unshift(result);
+      this.showToast("Erreur lors de la création du marché sur le serveur.", "error");
+      return;
     }
 
     this.closeModal("modal-marche");
@@ -946,16 +926,12 @@ const App = {
     });
 
     if (!result) {
-      result = {
-        id: Date.now(),
-        ...payload,
-        scoreRisque: Math.max(10, 100 - scoreSante)
-      };
-      this.state.equipements.unshift(result);
+      this.showToast("Erreur lors de la création de l'équipement sur le serveur.", "error");
+      return;
     }
 
     this.closeModal("modal-equipement");
-    this.showToast(`Équipement ${result.nom || ''} ajouté avec succès !`);
+    this.showToast(`Nouvel équipement ${result.nom || ''} créé avec succès !`);
     this.loadAllData();
   },
 

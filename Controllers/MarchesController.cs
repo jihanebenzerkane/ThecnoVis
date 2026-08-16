@@ -150,13 +150,20 @@ namespace TechnoVIS.Controllers
             int skipped = 0;
             var errors = new List<string>();
 
-            // Pre-load all existing clients, sites, and marches
-            var existingClients = await _context.Clients.Include(c => c.Sites).ToListAsync();
-            var existingMarches = await _context.Marches.ToListAsync();
+            await using var transaction = await _context.Database.BeginTransactionAsync();
 
-            foreach (var row in rows)
+            try
             {
-                try
+                // Pre-load all existing clients, sites, and marches
+                var existingClients = await _context.Clients.Include(c => c.Sites).ToListAsync();
+                var existingMarches = await _context.Marches.ToListAsync();
+                var allSites = await _context.Sites.ToListAsync();
+
+                int clientSeq = existingClients.Count;
+                int siteSeq = allSites.Count;
+                int marcheSeq = existingMarches.Count;
+
+                foreach (var row in rows)
                 {
                     if (string.IsNullOrWhiteSpace(row.ClientNom) && string.IsNullOrWhiteSpace(row.Reference))
                     {
@@ -171,29 +178,38 @@ namespace TechnoVIS.Controllers
 
                     if (client == null)
                     {
+                        clientSeq++;
                         var clientCodePrefix = clientNom.Length >= 3 
-                            ? clientNom[..3].ToUpper() 
+                            ? new string(clientNom.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper() 
                             : "CLI";
 
                         client = new Client
                         {
                             NomSociete = clientNom,
-                            CodeClient = $"CL-{clientCodePrefix}-{new Random().Next(100, 999)}",
+                            CodeClient = $"CL-{clientCodePrefix}-{clientSeq:D4}",
                             ContactPrincipal = string.Empty,
                             Email = string.Empty,
                             Telephone = string.Empty,
                             Adresse = string.Empty
                         };
                         _context.Clients.Add(client);
-                        await _context.SaveChangesAsync(); // get new Id
+                        await _context.SaveChangesAsync(); // generate Client Id
                         existingClients.Add(client);
                     }
 
                     // ── 2. Calculate Statut from DateFin vs today ──────────
                     var statut = row.DateFin.Date >= DateTime.Today ? "Actif" : "Expiré";
-                    var refCode = string.IsNullOrWhiteSpace(row.Reference)
-                        ? $"MAR-{DateTime.Now.Year}-{new Random().Next(100, 999)}"
-                        : row.Reference.Trim();
+                    
+                    string refCode;
+                    if (!string.IsNullOrWhiteSpace(row.Reference))
+                    {
+                        refCode = row.Reference.Trim();
+                    }
+                    else
+                    {
+                        marcheSeq++;
+                        refCode = $"MAR-{DateTime.Now.Year}-{marcheSeq:D4}";
+                    }
 
                     // ── 3. Resolve or update Marche ────────────────────────
                     var existingMarche = existingMarches
@@ -258,15 +274,17 @@ namespace TechnoVIS.Controllers
                         foreach (var city in cities)
                         {
                             var normalized = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(city.Trim().ToLower());
-                            var existingSite = await _context.Sites
-                                .FirstOrDefaultAsync(s => s.ClientId == client.Id && s.Ville == normalized);
+                            var existingSite = allSites
+                                .FirstOrDefault(s => s.ClientId == client.Id && s.Ville == normalized);
                             if (existingSite == null)
                             {
-                                var siteCode = normalized.Length >= 3 ? normalized[..3].ToUpper() : "ST";
+                                siteSeq++;
+                                var cleanCity = new string(normalized.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper();
+                                var siteCodePrefix = cleanCity.Length > 0 ? cleanCity : "ST";
                                 existingSite = new Site
                                 {
                                     NomSite = $"Site {normalized}",
-                                    CodeSite = $"ST-{siteCode}-{new Random().Next(10, 99)}",
+                                    CodeSite = $"ST-{siteCodePrefix}-{siteSeq:D4}",
                                     ClientId = client.Id,
                                     Ville = normalized,
                                     Adresse = string.Empty,
@@ -274,6 +292,7 @@ namespace TechnoVIS.Controllers
                                 };
                                 _context.Sites.Add(existingSite);
                                 await _context.SaveChangesAsync();
+                                allSites.Add(existingSite);
                             }
                             primarySite ??= existingSite;
                         }
@@ -285,7 +304,8 @@ namespace TechnoVIS.Controllers
                         void AddEquipIfAbsent(string nom, string categorie, int count)
                         {
                             if (count <= 0) return;
-                            var serial = $"EQ-{categorie[..Math.Min(3, categorie.Length)].ToUpper()}-{client.Id}-{primarySite.Id}";
+                            var catCode = new string(categorie.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper();
+                            var serial = $"EQ-{catCode}-{client.Id}-{primarySite.Id}";
                             var exists = _context.Equipements.Any(e => e.SiteId == primarySite.Id && e.SerialNumber == serial);
                             if (!exists)
                             {
@@ -312,16 +332,17 @@ namespace TechnoVIS.Controllers
                         AddEquipIfAbsent("Parc Serveurs", "Serveur", row.NombreServeur);
                     }
                 }
-                catch (Exception ex)
-                {
-                    errors.Add($"Ligne {row.RowIndex} ({row.Reference}): {ex.Message}");
-                    skipped++;
-                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { imported, updated, skipped, errors });
             }
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new { imported, updated, skipped, errors });
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = $"Échec de la transaction d'import : {ex.Message}" });
+            }
         }
 
         [HttpGet("export")]
