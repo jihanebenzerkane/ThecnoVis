@@ -8,7 +8,7 @@ using ClosedXML.Excel;
 namespace TechnoVIS.Services
 {
     /// <summary>
-    /// Represents a single row parsed from the Excel import file, before DB persistence.
+    /// Represents a single row parsed from the Excel import file for Markets.
     /// </summary>
     public class MarcheImportRow
     {
@@ -33,6 +33,42 @@ namespace TechnoVIS.Services
         public string? ParseWarning { get; set; }  // non-fatal issues recorded for display
     }
 
+    /// <summary>
+    /// Represents a single row parsed from the Excel import file for Equipments.
+    /// </summary>
+    public class EquipementImportRow
+    {
+        public int RowIndex { get; set; }
+        public string SerialNumber { get; set; } = string.Empty;
+        public string Nom { get; set; } = string.Empty;
+        public string Categorie { get; set; } = string.Empty;
+        public string ClientNom { get; set; } = string.Empty;
+        public string SiteNom { get; set; } = string.Empty;
+        public int Criticite { get; set; } = 3;
+        public int ScoreSante { get; set; } = 85;
+        public DateTime DateInstallation { get; set; }
+        public string Statut { get; set; } = "Opérationnel";
+        public string? ParseWarning { get; set; }
+    }
+
+    /// <summary>
+    /// Represents a single row parsed from the Excel import file for Technicians.
+    /// </summary>
+    public class TechnicienImportRow
+    {
+        public int RowIndex { get; set; }
+        public string Matricule { get; set; } = string.Empty;
+        public string Nom { get; set; } = string.Empty;
+        public string Prenom { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Telephone { get; set; } = string.Empty;
+        public string Base { get; set; } = "Casablanca";
+        public string Statut { get; set; } = "Actif";
+        public int HeuresHebdo { get; set; } = 40;
+        public string Specialites { get; set; } = string.Empty;
+        public string? ParseWarning { get; set; }
+    }
+
     public class ExcelImportService
     {
         // French month names → month number
@@ -54,7 +90,6 @@ namespace TechnoVIS.Services
 
         /// <summary>
         /// Parses the given .xlsx stream and returns a list of MarcheImportRow.
-        /// Never throws on dirty data — records warnings in ParseWarning instead.
         /// </summary>
         public List<MarcheImportRow> ParseExcel(Stream stream)
         {
@@ -63,9 +98,8 @@ namespace TechnoVIS.Services
             using var wb = new XLWorkbook(stream);
             var ws = wb.Worksheet(1);
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
-            if (lastRow < 2) return result; // empty or header-only
+            if (lastRow < 2) return result;
 
-            // Build column index map from the header row (row 1)
             var headerMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var headerRow = ws.Row(1);
             foreach (var cell in headerRow.CellsUsed())
@@ -75,126 +109,353 @@ namespace TechnoVIS.Services
                     headerMap[header] = cell.Address.ColumnNumber;
             }
 
-            int Col(string name) => headerMap.TryGetValue(name, out var c) ? c : -1;
-
-            for (int rowNum = 2; rowNum <= lastRow; rowNum++)
+            int Col(params string[] aliases)
             {
-                var row = ws.Row(rowNum);
+                foreach (var a in aliases)
+                {
+                    if (headerMap.TryGetValue(a, out var c)) return c;
+                }
+                return -1;
+            }
 
-                // Skip fully empty rows
+            int colRef = Col("marché", "marche", "référence", "reference", "ref", "code");
+            int colClient = Col("clients", "client", "société", "societe", "nom client");
+            int colDebut = Col("date debut", "date début", "debut", "début");
+            int colFin = Col("date fin", "fin");
+            int colType = Col("type de contrat", "type contrat", "type");
+            int colVisites = Col("nb visite / an", "nb visite", "visites/an", "visites annuelles");
+            int colRealisees = Col("nb visite réalisé", "visites réalisées", "visites realisees");
+            int colGlobal = Col("nb visite global", "visites global");
+            int colSites = Col("site", "sites", "ville", "villes", "localisation");
+            int colPv = Col("pv", "pv requis");
+            int colFacture = Col("facture", "facture requise");
+            int colPc = Col("nombre pc", "pc");
+            int colPcPort = Col("nombre pc portable", "pc portable", "portables");
+            int colImp = Col("nombre imprimante", "imprimante", "imprimantes");
+            int colServ = Col("nombre serveur", "serveur", "serveurs");
+            int colDiv = Col("equipement divers", "divers", "autres equipements");
+            int colComment = Col("commentaire", "commentaires", "remarques", "obs");
+
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var row = ws.Row(r);
                 if (row.IsEmpty()) continue;
 
                 var warnings = new List<string>();
-                var parsed = new MarcheImportRow { RowIndex = rowNum };
 
-                // ── Reference ─────────────────────────────────────────────
-                parsed.Reference = SafeString(row, Col("Référence"));
+                string GetStr(int col) => col > 0 ? row.Cell(col).GetString().Trim() : string.Empty;
+                int GetInt(int col, int def = 0)
+                {
+                    if (col < 1) return def;
+                    var s = row.Cell(col).GetString().Trim();
+                    return int.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : def;
+                }
 
-                // ── Client ────────────────────────────────────────────────
-                parsed.ClientNom = SafeString(row, Col("Client"));
+                var reference = GetStr(colRef);
+                var clientNom = GetStr(colClient);
+                if (string.IsNullOrEmpty(reference) && string.IsNullOrEmpty(clientNom))
+                    continue;
 
-                // ── Dates ─────────────────────────────────────────────────
-                parsed.DateDebut = ParseFrenchDate(row, Col("Date début"), warnings, "Date début");
-                parsed.DateFin   = ParseFrenchDate(row, Col("Date fin"),   warnings, "Date fin");
+                if (string.IsNullOrEmpty(reference))
+                    reference = $"MAR-{r:D4}";
 
-                // ── Type de contrat ───────────────────────────────────────
-                parsed.TypeContrat = SafeString(row, Col("Type de contrat"));
+                var dateDebut = ParseFrenchDate(row, colDebut, warnings, "Date début");
+                var dateFin = ParseFrenchDate(row, colFin, warnings, "Date fin");
+                if (dateFin < dateDebut)
+                {
+                    warnings.Add($"Date fin ({dateFin:dd/MM/yyyy}) antérieure à la date début ({dateDebut:dd/MM/yyyy}) — ajustée à début + 1 an");
+                    dateFin = dateDebut.AddYears(1);
+                }
 
-                // ── Nb visites / an  (e.g. "4 par an" → 4) ───────────────
-                var visitesAnRaw = SafeString(row, Col("Nb visite / An"));
-                parsed.VisitesAnnuellesPrevues = ExtractLeadingInt(visitesAnRaw, warnings, "Nb visite / An");
+                var sitesRaw = GetStr(colSites);
+                var sitesClean = CleanSites(sitesRaw);
 
-                // ── Nb visites réalisées ───────────────────────────────────
-                parsed.VisitesRealisees = SafeInt(row, Col("Nb  visite réalisé"), warnings, "Nb visite réalisé");
-
-                // ── Nb visites global ─────────────────────────────────────
-                parsed.NbVisiteGlobal = SafeInt(row, Col("Nb visite global"), warnings, "Nb visite global");
-
-                // ── Sites (title-case city names) ─────────────────────────
-                var sitesRaw = SafeString(row, Col("Sites"));
-                parsed.Sites = ToTitleCase(sitesRaw);
-
-                // ── PV O/N ────────────────────────────────────────────────
-                parsed.PvRequis = IsBoolOui(SafeString(row, Col("PV O/N")));
-
-                // ── F O/N ─────────────────────────────────────────────────
-                parsed.FactureRequise = IsBoolOui(SafeString(row, Col("F O/N")));
-
-                // ── Equipment counts ─────────────────────────────────────
-                parsed.NombrePC         = SafeInt(row, Col("Nombre de PC"),          warnings, "Nombre de PC");
-                parsed.NombrePCPortable = SafeInt(row, Col("Nombre de PC Portable"), warnings, "Nombre de PC Portable");
-                parsed.NombreImprimante = SafeInt(row, Col("Nombre Imprimante"),     warnings, "Nombre Imprimante");
-                parsed.NombreServeur    = SafeInt(row, Col("Nombre Serveur"),        warnings, "Nombre Serveur");
-
-                // ── Autres (raw, store as-is) ─────────────────────────────
-                parsed.EquipementsDivers = SafeString(row, Col("Autres"));
-
-                // ── Commentaire ───────────────────────────────────────────
-                parsed.CommentaireImport = SafeString(row, Col("Commentaire"));
-
-                if (warnings.Count > 0)
-                    parsed.ParseWarning = string.Join("; ", warnings);
-
-                result.Add(parsed);
+                result.Add(new MarcheImportRow
+                {
+                    RowIndex = r,
+                    Reference = reference,
+                    ClientNom = clientNom,
+                    DateDebut = dateDebut,
+                    DateFin = dateFin,
+                    TypeContrat = GetStr(colType),
+                    VisitesAnnuellesPrevues = GetInt(colVisites, 12),
+                    VisitesRealisees = GetInt(colRealisees, 0),
+                    NbVisiteGlobal = GetInt(colGlobal, 0),
+                    Sites = sitesClean,
+                    PvRequis = IsBoolOui(GetStr(colPv)),
+                    FactureRequise = IsBoolOui(GetStr(colFacture)),
+                    NombrePC = GetInt(colPc),
+                    NombrePCPortable = GetInt(colPcPort),
+                    NombreImprimante = GetInt(colImp),
+                    NombreServeur = GetInt(colServ),
+                    EquipementsDivers = GetStr(colDiv),
+                    CommentaireImport = GetStr(colComment),
+                    ParseWarning = warnings.Count > 0 ? string.Join(" | ", warnings) : null
+                });
             }
 
             return result;
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────
-
-        private static string SafeString(IXLRow row, int col)
+        /// <summary>
+        /// Parses the given .xlsx stream and returns a list of EquipementImportRow.
+        /// </summary>
+        public List<EquipementImportRow> ParseEquipementsExcel(Stream stream)
         {
-            if (col < 1) return string.Empty;
-            return row.Cell(col).GetString().Trim();
+            var result = new List<EquipementImportRow>();
+
+            using var wb = new XLWorkbook(stream);
+            var ws = wb.Worksheet(1);
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+            if (lastRow < 2) return result;
+
+            var headerMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var headerRow = ws.Row(1);
+            foreach (var cell in headerRow.CellsUsed())
+            {
+                var header = cell.GetString().Trim();
+                if (!string.IsNullOrEmpty(header) && !headerMap.ContainsKey(header))
+                    headerMap[header] = cell.Address.ColumnNumber;
+            }
+
+            int Col(params string[] aliases)
+            {
+                foreach (var a in aliases)
+                {
+                    if (headerMap.TryGetValue(a, out var c)) return c;
+                }
+                return -1;
+            }
+
+            int colSerial = Col("numéro de série", "numero de serie", "n° série", "n° serie", "serial", "serialnumber", "code", "matricule");
+            int colNom = Col("nom équipement", "nom equipement", "équipement", "equipement", "désignation", "designation", "nom");
+            int colCat = Col("catégorie", "categorie", "type équipement", "type equipement", "famille");
+            int colClient = Col("client", "société", "societe", "nom client");
+            int colSite = Col("site", "site client", "nom site", "ville", "localisation");
+            int colCrit = Col("criticité", "criticite", "niveau criticité", "poids");
+            int colSante = Col("santé", "sante", "score santé", "score sante", "état", "etat");
+            int colDate = Col("date installation", "date mise en service", "installation", "mise en service");
+            int colStatut = Col("statut", "état opérationnel", "etat operationnel");
+
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var row = ws.Row(r);
+                if (row.IsEmpty()) continue;
+
+                var warnings = new List<string>();
+
+                string GetStr(int col) => col > 0 ? row.Cell(col).GetString().Trim() : string.Empty;
+                int GetInt(int col, int def = 0)
+                {
+                    if (col < 1) return def;
+                    var s = row.Cell(col).GetString().Trim();
+                    return int.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : def;
+                }
+
+                var serialNumber = GetStr(colSerial);
+                var nom = GetStr(colNom);
+                var clientNom = GetStr(colClient);
+                var siteNom = GetStr(colSite);
+
+                if (string.IsNullOrEmpty(serialNumber) && string.IsNullOrEmpty(nom))
+                    continue;
+
+                if (string.IsNullOrEmpty(serialNumber))
+                {
+                    serialNumber = $"EQ-{r:D4}";
+                    warnings.Add("N° de série généré automatiquement");
+                }
+
+                if (string.IsNullOrEmpty(nom))
+                    nom = $"Équipement {serialNumber}";
+
+                var categorie = GetStr(colCat);
+                if (string.IsNullOrEmpty(categorie)) categorie = "Général";
+
+                var criticite = GetInt(colCrit, 3);
+                if (criticite < 1) criticite = 1;
+                if (criticite > 5) criticite = 5;
+
+                var scoreSante = GetInt(colSante, 85);
+                if (scoreSante < 0) scoreSante = 0;
+                if (scoreSante > 100) scoreSante = 100;
+
+                var dateInstallation = ParseFrenchDate(row, colDate, warnings, "Date installation");
+                var statut = GetStr(colStatut);
+                if (string.IsNullOrEmpty(statut)) statut = "Opérationnel";
+
+                result.Add(new EquipementImportRow
+                {
+                    RowIndex = r,
+                    SerialNumber = serialNumber,
+                    Nom = nom,
+                    Categorie = categorie,
+                    ClientNom = clientNom,
+                    SiteNom = siteNom,
+                    Criticite = criticite,
+                    ScoreSante = scoreSante,
+                    DateInstallation = dateInstallation,
+                    Statut = statut,
+                    ParseWarning = warnings.Count > 0 ? string.Join(" | ", warnings) : null
+                });
+            }
+
+            return result;
         }
 
         /// <summary>
-        /// Safely read an integer cell. Treats "__" and blanks as 0.
+        /// Parses the given .xlsx stream and returns a list of TechnicienImportRow.
         /// </summary>
-        private static int SafeInt(IXLRow row, int col, List<string> warnings, string colName)
+        public List<TechnicienImportRow> ParseTechniciensExcel(Stream stream)
         {
-            if (col < 1) return 0;
-            var raw = row.Cell(col).GetString().Trim();
-            if (string.IsNullOrEmpty(raw) || raw == "__") return 0;
-            if (int.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
-                return val;
-            warnings.Add($"{colName}: valeur non numérique '{raw}', remplacée par 0");
-            return 0;
+            var result = new List<TechnicienImportRow>();
+
+            using var wb = new XLWorkbook(stream);
+            var ws = wb.Worksheet(1);
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+            if (lastRow < 2) return result;
+
+            var headerMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var headerRow = ws.Row(1);
+            foreach (var cell in headerRow.CellsUsed())
+            {
+                var header = cell.GetString().Trim();
+                if (!string.IsNullOrEmpty(header) && !headerMap.ContainsKey(header))
+                    headerMap[header] = cell.Address.ColumnNumber;
+            }
+
+            int Col(params string[] aliases)
+            {
+                foreach (var a in aliases)
+                {
+                    if (headerMap.TryGetValue(a, out var c)) return c;
+                }
+                return -1;
+            }
+
+            int colMatricule = Col("matricule", "code", "id", "identifiant", "code technicien");
+            int colNom = Col("nom", "nom de famille");
+            int colPrenom = Col("prénom", "prenom");
+            int colNomComplet = Col("nom complet", "nom et prénom", "nom et prenom", "technicien");
+            int colEmail = Col("email", "courriel", "mail", "e-mail");
+            int colTel = Col("téléphone", "telephone", "tel", "gsm", "mobile");
+            int colBase = Col("base", "agence", "ville", "localisation", "site de rattachement");
+            int colStatut = Col("statut", "état", "etat", "disponibilité", "disponibilite");
+            int colHeures = Col("heures hebdo", "heures", "capacité", "capacite", "heures/semaine");
+            int colSpecs = Col("spécialités", "specialites", "spécialité", "specialite", "compétences", "competences");
+
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var row = ws.Row(r);
+                if (row.IsEmpty()) continue;
+
+                var warnings = new List<string>();
+
+                string GetStr(int col) => col > 0 ? row.Cell(col).GetString().Trim() : string.Empty;
+                int GetInt(int col, int def = 0)
+                {
+                    if (col < 1) return def;
+                    var s = row.Cell(col).GetString().Trim();
+                    return int.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : def;
+                }
+
+                var matricule = GetStr(colMatricule);
+                var nom = GetStr(colNom);
+                var prenom = GetStr(colPrenom);
+
+                if (string.IsNullOrEmpty(nom) && string.IsNullOrEmpty(prenom))
+                {
+                    var nomComplet = GetStr(colNomComplet);
+                    if (!string.IsNullOrEmpty(nomComplet))
+                    {
+                        var parts = nomComplet.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
+                        prenom = parts.Length > 0 ? parts[0] : "";
+                        nom = parts.Length > 1 ? parts[1] : prenom;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(matricule) && string.IsNullOrEmpty(nom))
+                    continue;
+
+                if (string.IsNullOrEmpty(matricule))
+                {
+                    matricule = $"TECH-{r:D4}";
+                    warnings.Add("Matricule généré automatiquement");
+                }
+
+                var email = GetStr(colEmail);
+                if (string.IsNullOrEmpty(email))
+                {
+                    var cleanPrenom = Regex.Replace(prenom.ToLower(), @"[^a-z0-9]", "");
+                    var cleanNom = Regex.Replace(nom.ToLower(), @"[^a-z0-9]", "");
+                    email = $"{cleanPrenom}.{cleanNom}@technovis.ma";
+                }
+
+                var tel = GetStr(colTel);
+                var baseLoc = GetStr(colBase);
+                if (string.IsNullOrEmpty(baseLoc)) baseLoc = "Casablanca";
+
+                var statut = GetStr(colStatut);
+                if (string.IsNullOrEmpty(statut)) statut = "Actif";
+
+                var heures = GetInt(colHeures, 40);
+                if (heures <= 0) heures = 40;
+
+                var specs = GetStr(colSpecs);
+
+                result.Add(new TechnicienImportRow
+                {
+                    RowIndex = r,
+                    Matricule = matricule,
+                    Nom = nom,
+                    Prenom = prenom,
+                    Email = email,
+                    Telephone = tel,
+                    Base = baseLoc,
+                    Statut = statut,
+                    HeuresHebdo = heures,
+                    Specialites = specs,
+                    ParseWarning = warnings.Count > 0 ? string.Join(" | ", warnings) : null
+                });
+            }
+
+            return result;
         }
 
-        /// <summary>
-        /// Extracts the leading integer from strings like "4 par an" or "12".
-        /// </summary>
-        private static int ExtractLeadingInt(string raw, List<string> warnings, string colName)
+        private static string CleanSites(string raw)
         {
-            if (string.IsNullOrWhiteSpace(raw) || raw == "__") return 0;
-            var match = Regex.Match(raw.Trim(), @"^\d+");
-            if (match.Success) return int.Parse(match.Value);
-            warnings.Add($"{colName}: impossible d'extraire un entier depuis '{raw}', remplacé par 0");
-            return 0;
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+            var parts = raw.Split(new[] { ',', ';', '/', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            var list = new List<string>();
+            foreach (var p in parts)
+            {
+                var trimmed = p.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                    list.Add(ToTitleCase(trimmed));
+            }
+            return string.Join(", ", list);
         }
 
-        /// <summary>
-        /// Parses a date cell that may be a real DateTime or a French "mois année" text string.
-        /// </summary>
         private static DateTime ParseFrenchDate(IXLRow row, int col, List<string> warnings, string colName)
         {
             if (col < 1) return DateTime.Today;
             var cell = row.Cell(col);
 
-            // Try reading as a proper DateTime cell first
             if (cell.DataType == XLDataType.DateTime)
                 return cell.GetDateTime().Date;
 
-            // Try parsing as a number (Excel serial date)
             var raw = cell.GetString().Trim();
             if (double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var serial))
             {
                 try { return DateTime.FromOADate(serial).Date; } catch { }
             }
 
-            // Try "août 2023", "Janvier 2022", etc.
+            if (DateTime.TryParse(raw, CultureInfo.GetCultureInfo("fr-FR"), DateTimeStyles.None, out var dtFr))
+                return dtFr.Date;
+
+            if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dtInv))
+                return dtInv.Date;
+
             if (!string.IsNullOrEmpty(raw))
             {
                 var parts = raw.Split(new[] { ' ', '-', '/' }, StringSplitOptions.RemoveEmptyEntries);
@@ -204,7 +465,6 @@ namespace TechnoVIS.Services
                     {
                         if (FrenchMonths.TryGetValue(part, out var month))
                         {
-                            // Find the year part (4-digit number)
                             foreach (var p in parts)
                             {
                                 if (int.TryParse(p, out var year) && year > 1900 && year < 2100)
@@ -221,20 +481,13 @@ namespace TechnoVIS.Services
             return DateTime.Today;
         }
 
-        /// <summary>
-        /// "O", "o", "Oui", "oui", "YES" → true; anything else → false.
-        /// </summary>
         private static bool IsBoolOui(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return false;
             var v = raw.Trim().ToUpperInvariant();
-            return v == "O" || v == "OUI" || v == "YES" || v == "Y";
+            return v == "O" || v == "OUI" || v == "YES" || v == "Y" || v == "1" || v == "VRAI" || v == "TRUE";
         }
 
-        /// <summary>
-        /// Converts a city/name string to Title Case.
-        /// "RABAT" → "Rabat", "rabat" → "Rabat", "Ain sebaa" → "Ain Sebaa".
-        /// </summary>
         private static string ToTitleCase(string input)
         {
             if (string.IsNullOrWhiteSpace(input)) return string.Empty;

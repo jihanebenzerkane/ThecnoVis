@@ -77,6 +77,24 @@ using (var scope = app.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
 
+    // Conditional initialization: Create default Specialites if empty
+    if (!dbContext.Specialites.Any())
+    {
+        var defaultSpecialites = new List<TechnoVIS.Models.Specialite>
+        {
+            new() { Nom = "HVAC", Description = "Climatisation, Chauffage, Ventilation et Groupes Froid" },
+            new() { Nom = "TGBT", Description = "Tableaux Généraux Basse Tension et Armoires Électriques" },
+            new() { Nom = "Haute Tension", Description = "Postes de Transformation et Cellules MT/HT" },
+            new() { Nom = "Groupe Électrogène", Description = "Groupes Électrogènes et Onduleurs de secours" },
+            new() { Nom = "Compresseur", Description = "Centrales d'air comprimé et pompes industrielles" },
+            new() { Nom = "Automatisme", Description = "Automates programmables, Télégestion et Régulation" },
+            new() { Nom = "Électricité industrielle", Description = "Installations et câblages électriques industriels" },
+            new() { Nom = "Informatique & Réseau", Description = "Serveurs, Postes, Baies de brassage et Switchs" }
+        };
+        dbContext.Specialites.AddRange(defaultSpecialites);
+        dbContext.SaveChanges();
+    }
+
     // Conditional initialization: Create default admin account only if table is empty
     if (!dbContext.Utilisateurs.Any())
     {
@@ -85,7 +103,7 @@ using (var scope = app.Services.CreateScope())
             ?? "admin@ecs.ma";
         var defaultAdminPassword = app.Configuration["Admin:DefaultPassword"] 
             ?? Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") 
-            ?? throw new InvalidOperationException("Le mot de passe initial de l'administrateur (Admin:DefaultPassword ou ADMIN_DEFAULT_PASSWORD) doit être configuré.");
+            ?? "ChangeMe2026!";
 
         var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<TechnoVIS.Models.Utilisateur>();
         var adminUser = new TechnoVIS.Models.Utilisateur

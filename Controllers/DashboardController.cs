@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TechnoVIS.Data;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
-using System;
 
 namespace TechnoVIS.Controllers
 {
@@ -69,6 +69,41 @@ namespace TechnoVIS.Controllers
                 TotalTechniciens = totalTechniciens,
                 AlertesUrgent = alertesVisites
             });
+        }
+
+        [HttpPost("reset-data")]
+        public async Task<IActionResult> ResetData()
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // Vider complètement toutes les tables opérationnelles sans réinjecter de fausses données
+                _context.Visites.RemoveRange(_context.Visites);
+                _context.Equipements.RemoveRange(_context.Equipements);
+                _context.Marches.RemoveRange(_context.Marches);
+                _context.Sites.RemoveRange(_context.Sites);
+                _context.Clients.RemoveRange(_context.Clients);
+                _context.Techniciens.RemoveRange(_context.Techniciens);
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new
+                {
+                    message = "Toutes les tables ont été vidées avec succès (0 donnée résiduelle).",
+                    clients = 0,
+                    sites = 0,
+                    techniciens = 0,
+                    equipements = 0,
+                    marches = 0,
+                    visites = 0
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = $"Erreur lors du vidage des tables : {ex.Message}" });
+            }
         }
     }
 }

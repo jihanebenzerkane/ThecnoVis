@@ -17,6 +17,7 @@ namespace TechnoVIS.Data
         public DbSet<Equipement> Equipements => Set<Equipement>();
         public DbSet<Visite> Visites => Set<Visite>();
         public DbSet<Technicien> Techniciens => Set<Technicien>();
+        public DbSet<Specialite> Specialites => Set<Specialite>();
         public DbSet<Utilisateur> Utilisateurs => Set<Utilisateur>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -48,12 +49,33 @@ namespace TechnoVIS.Data
                 .HasIndex(v => v.Reference)
                 .IsUnique();
 
+            modelBuilder.Entity<Specialite>()
+                .HasIndex(s => s.Nom)
+                .IsUnique();
+
+            modelBuilder.Entity<Technicien>()
+                .HasIndex(t => t.Matricule)
+                .IsUnique();
+
+            // ── Many-to-Many Technicien ↔ Specialite ──────────────────
+            modelBuilder.Entity<Technicien>()
+                .HasMany(t => t.Specialites)
+                .WithMany(s => s.Techniciens)
+                .UsingEntity(j => j.ToTable("TechnicienSpecialites"));
+
             // ── Visite → Technicien (FK, nullable) ─────────────────────
             modelBuilder.Entity<Visite>()
                 .HasOne(v => v.Technicien)
                 .WithMany(t => t.Visites)
                 .HasForeignKey(v => v.TechnicienId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // ── Visite → Equipement (FK) ───────────────────────────────
+            modelBuilder.Entity<Visite>()
+                .HasOne(v => v.Equipement)
+                .WithMany(e => e.Visites)
+                .HasForeignKey(v => v.EquipementId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // ── Visite → Marche (FK, nullable) ─────────────────────────
             modelBuilder.Entity<Visite>()
@@ -62,9 +84,8 @@ namespace TechnoVIS.Data
                 .HasForeignKey(v => v.MarcheId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // ── NO SEED DATA ───────────────────────────────────────────
-            // All data is imported via Excel or created via CRUD endpoints.
-            // Admin account is initialized conditionally in Program.cs.
+            // ── NO SEED DATA IN ONMODELCREATING ────────────────────────
+            // Initial reference data (e.g. standard Specialites, default Admin) is initialized safely in Program.cs.
         }
     }
 }

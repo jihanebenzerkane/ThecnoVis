@@ -1,8 +1,22 @@
 using System;
+using System.Linq;
 using TechnoVIS.Models;
 
 namespace TechnoVIS.Services
 {
+    public class TechnicienScoreDetail
+    {
+        public int ScoreTotal { get; set; }
+        public int ScoreCompetence { get; set; }
+        public int ScoreDisponibilite { get; set; }
+        public int ScoreCharge { get; set; }
+        public int ScoreProximite { get; set; }
+        public string DetailsCompetence { get; set; } = string.Empty;
+        public string DetailsDisponibilite { get; set; } = string.Empty;
+        public string DetailsCharge { get; set; } = string.Empty;
+        public string DetailsProximite { get; set; } = string.Empty;
+    }
+
     public class ScoringService
     {
         /// <summary>
@@ -16,7 +30,7 @@ namespace TechnoVIS.Services
             double scoreAge = Math.Min(40, (DateTime.Now - equipement.DateInstallation).TotalDays / 365.25 * 4);
             double scoreCriticiticite = equipement.Criticiticite * 8.0; // 8 à 40
             double joursSansVisite = (DateTime.Now - equipement.DerniereVisite).TotalDays;
-            double scoreVusterite = Math.Min(20, joursSansVisite / 15.0);
+            double scoreVusterite = Math.Min(20, Math.Max(0, joursSansVisite / 15.0));
 
             int total = (int)Math.Round(scoreAge + scoreCriticiticite + scoreVusterite);
             return Math.Clamp(total, 5, 98);
@@ -37,6 +51,10 @@ namespace TechnoVIS.Services
             {
                 baseScore += 15.0;
             }
+            else if (typeVisite == "Diagnostic")
+            {
+                baseScore += 20.0;
+            }
 
             // Majoration si la date prévue est dépassée
             if (datePrevue < DateTime.Now.Date)
@@ -49,51 +67,107 @@ namespace TechnoVIS.Services
         }
 
         /// <summary>
-        /// Calcule un score de pertinence (0-100) pour l'affectation d'un technicien à une visite.
-        /// Basé sur la compétence (40), la proximité géographique (30), la disponibilité (20), et la charge de travail (10).
+        /// Moteur de scoring dynamique (0-100) pour l'affectation d'un technicien ECS à une intervention :
+        /// - 40% Compétence (adéquation spécialité / catégorie équipement)
+        /// - 30% Disponibilité (statut actif/disponible + capacité horaire restante)
+        /// - 20% Charge de travail (équilibrage des heures planifiées)
+        /// - 10% Proximité géographique (base agence ECS vs site client)
+        /// </summary>
+        public TechnicienScoreDetail EvaluerTechnicien(Technicien technicien, Equipement equipement, DateTime datePrevue, int dureeEstimeeMinutes = 120)
+        {
+            var res = new TechnicienScoreDetail();
+            if (technicien == null || equipement == null) return res;
+
+            // 1. Compétence (40%)
+            var cat = equipement.Categorie ?? string.Empty;
+            bool matchExact = technicien.Specialites.Any(s => string.Equals(s.Nom, cat, StringComparison.OrdinalIgnoreCase));
+            bool matchPartiel = !matchExact && technicien.Specialites.Any(s =>
+                s.Nom.Contains(cat, StringComparison.OrdinalIgnoreCase) ||
+                cat.Contains(s.Nom, StringComparison.OrdinalIgnoreCase));
+
+            if (matchExact)
+            {
+                res.ScoreCompetence = 40;
+                res.DetailsCompetence = $"Spécialité certifiée {cat}";
+            }
+            else if (matchPartiel)
+            {
+                res.ScoreCompetence = 25;
+                res.DetailsCompetence = $"Compétence connexe pour {cat}";
+            }
+            else
+            {
+                res.ScoreCompetence = 5;
+                res.DetailsCompetence = "Sans spécialité directe";
+            }
+
+            // 2. Disponibilité (30%)
+            if (!technicien.Disponible || technicien.Statut != "Actif")
+            {
+                res.ScoreDisponibilite = 0;
+                res.DetailsDisponibilite = $"Indisponible ({technicien.Statut})";
+            }
+            else
+            {
+                int heuresHebdo = technicien.HeuresHebdo > 0 ? technicien.HeuresHebdo : 40;
+                int heuresRestantes = Math.Max(0, heuresHebdo - technicien.HeuresPlanifiees);
+                double dureeHeures = Math.Ceiling(dureeEstimeeMinutes / 60.0);
+
+                if (heuresRestantes >= dureeHeures)
+                {
+                    res.ScoreDisponibilite = 30;
+                    res.DetailsDisponibilite = $"Disponible ({heuresRestantes}h restantes)";
+                }
+                else if (heuresRestantes > 0)
+                {
+                    res.ScoreDisponibilite = (int)Math.Round(30.0 * heuresRestantes / Math.Max(1.0, dureeHeures));
+                    res.DetailsDisponibilite = $"Capacité limitée ({heuresRestantes}h restantes)";
+                }
+                else
+                {
+                    res.ScoreDisponibilite = 5;
+                    res.DetailsDisponibilite = "Semaine complète (surcharge)";
+                }
+            }
+
+            // 3. Charge de travail (20%)
+            int capacite = technicien.HeuresHebdo > 0 ? technicien.HeuresHebdo : 40;
+            double ratioCharge = (double)technicien.HeuresPlanifiees / capacite;
+            res.ScoreCharge = (int)Math.Round(Math.Max(0, (1.0 - Math.Min(1.0, ratioCharge)) * 20.0));
+            int pctCharge = (int)Math.Round(ratioCharge * 100);
+            res.DetailsCharge = $"Charge {pctCharge}% ({technicien.HeuresPlanifiees}h/{capacite}h)";
+
+            // 4. Proximité (10%)
+            var villeSite = equipement.Site?.Ville ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(technicien.Base) && !string.IsNullOrWhiteSpace(villeSite) &&
+                string.Equals(technicien.Base.Trim(), villeSite.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                res.ScoreProximite = 10;
+                res.DetailsProximite = $"Même ville ({technicien.Base})";
+            }
+            else if (!string.IsNullOrWhiteSpace(technicien.Base))
+            {
+                res.ScoreProximite = 5;
+                res.DetailsProximite = $"Base {technicien.Base} → {villeSite}";
+            }
+            else
+            {
+                res.ScoreProximite = 4;
+                res.DetailsProximite = "Base non renseignée";
+            }
+
+            res.ScoreTotal = Math.Clamp(res.ScoreCompetence + res.ScoreDisponibilite + res.ScoreCharge + res.ScoreProximite, 0, 100);
+            return res;
+        }
+
+        /// <summary>
+        /// Rétro-compatibilité : retourne le score total d'affectation
         /// </summary>
         public int CalculerScoreAffectationTechnicien(Technicien technicien, Visite visite, Equipement equipement)
         {
-            if (technicien == null || visite == null || equipement == null) return 0;
-
-            int score = 0;
-
-            // 1. Compétence (40 points)
-            if (!string.IsNullOrEmpty(technicien.Specialites) && 
-                !string.IsNullOrEmpty(equipement.Categorie) &&
-                technicien.Specialites.Contains(equipement.Categorie, StringComparison.OrdinalIgnoreCase))
-            {
-                score += 40;
-            }
-
-            // 2. Proximité (30 points)
-            if (technicien.SiteRattacheId == equipement.SiteId)
-            {
-                score += 30;
-            }
-            // Add +15 if same client? The prompt says "+15 if same client, else 0". 
-            // We need to know the client. Site has ClientId. If we can get ClientId of both sites...
-            // Let's rely on SiteRattacheId for exact site (+30).
-            // Actually, we need to handle "same client". If equipement.Site.ClientId == technicien.SiteRattache.ClientId
-            // Let's implement that if the data is available. If not loaded, we just use the ID check we can do.
-            else if (equipement.Site != null && technicien.SiteRattache != null && 
-                     equipement.Site.ClientId == technicien.SiteRattache.ClientId)
-            {
-                score += 15;
-            }
-
-            // 3. Disponibilité (20 points)
-            if (technicien.Disponible)
-            {
-                score += 20;
-            }
-
-            // 4. Charge de travail (10 points max)
-            int scoreCharge = 10 - (technicien.ChargeActuelle * 2);
-            if (scoreCharge < 0) scoreCharge = 0;
-            score += scoreCharge;
-
-            return Math.Clamp(score, 0, 100);
+            var date = visite?.DatePrevue ?? DateTime.Now;
+            var duree = visite?.DureeEstimeeMinutes ?? 120;
+            return EvaluerTechnicien(technicien, equipement, date, duree).ScoreTotal;
         }
     }
 }

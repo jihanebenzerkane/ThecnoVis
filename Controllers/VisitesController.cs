@@ -7,6 +7,7 @@ using TechnoVIS.Services;
 using System.Threading.Tasks;
 using System.Linq;
 using System;
+using System.Collections.Generic;
 
 namespace TechnoVIS.Controllers
 {
@@ -57,18 +58,24 @@ namespace TechnoVIS.Controllers
                     v.Id,
                     v.Reference,
                     v.TypeVisite,
+                    v.TypeVisiteAutre,
+                    v.Description,
+                    TypeVisiteAffiche = v.TypeVisite == "Autre" && !string.IsNullOrWhiteSpace(v.TypeVisiteAutre) ? $"Autre ({v.TypeVisiteAutre})" : v.TypeVisite,
                     v.EquipementId,
                     EquipementNom = v.Equipement != null ? v.Equipement.Nom : "Inconnu",
                     EquipementSerial = v.Equipement != null ? v.Equipement.SerialNumber : "",
+                    EquipementCategorie = v.Equipement != null ? v.Equipement.Categorie : "",
                     SiteNom = v.Equipement != null && v.Equipement.Site != null ? v.Equipement.Site.NomSite : "",
                     ClientNom = v.Equipement != null && v.Equipement.Site != null && v.Equipement.Site.Client != null ? v.Equipement.Site.Client.NomSociete : "",
                     v.TechnicienId,
                     TechnicienNom = v.Technicien != null ? $"{v.Technicien.Prenom} {v.Technicien.Nom}".Trim() : "Non assigné",
+                    TechnicienMatricule = v.Technicien != null ? v.Technicien.Matricule : "",
                     v.MarcheId,
                     MarcheCode = v.Marche != null ? v.Marche.CodeMarche : "",
                     v.DatePrevue,
                     v.DateRealisee,
                     v.DureeEstimeeMinutes,
+                    v.DureeReelleMinutes,
                     v.Statut,
                     v.ScorePriorite,
                     v.RapportTechnique,
@@ -116,6 +123,9 @@ namespace TechnoVIS.Controllers
                     v.Id,
                     v.Reference,
                     v.TypeVisite,
+                    v.TypeVisiteAutre,
+                    v.Description,
+                    TypeVisiteAffiche = v.TypeVisite == "Autre" && !string.IsNullOrWhiteSpace(v.TypeVisiteAutre) ? $"Autre ({v.TypeVisiteAutre})" : v.TypeVisite,
                     v.EquipementId,
                     EquipementNom = v.Equipement != null ? v.Equipement.Nom : "Inconnu",
                     EquipementSerial = v.Equipement != null ? v.Equipement.SerialNumber : "",
@@ -128,6 +138,7 @@ namespace TechnoVIS.Controllers
                     v.DatePrevue,
                     v.DateRealisee,
                     v.DureeEstimeeMinutes,
+                    v.DureeReelleMinutes,
                     v.Statut,
                     v.ScorePriorite,
                     v.RapportTechnique,
@@ -156,9 +167,18 @@ namespace TechnoVIS.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateVisite([FromBody] Visite model)
         {
-            if (model == null) return BadRequest();
+            if (model == null) return BadRequest(new { message = "Données invalides." });
 
-            var equipement = await _context.Equipements.FindAsync(model.EquipementId);
+            // Validation règle métier : si TypeVisite == "Autre", TypeVisiteAutre est obligatoire
+            if (string.Equals(model.TypeVisite, "Autre", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(model.TypeVisiteAutre))
+                {
+                    return BadRequest(new { message = "Le champ 'Précisez le type de visite' est obligatoire lorsque le type 'Autre' est sélectionné." });
+                }
+            }
+
+            var equipement = await _context.Equipements.Include(e => e.Site).FirstOrDefaultAsync(e => e.Id == model.EquipementId);
             if (equipement != null)
             {
                 model.ScorePriorite = _scoringService.CalculerPrioriteVisite(equipement, model.TypeVisite, model.DatePrevue);
@@ -196,6 +216,10 @@ namespace TechnoVIS.Controllers
             {
                 visite.ActionsCorrectives = update.ActionsCorrectives;
             }
+            if (update.DureeReelleMinutes.HasValue && update.DureeReelleMinutes.Value > 0)
+            {
+                visite.DureeReelleMinutes = update.DureeReelleMinutes.Value;
+            }
 
             if (update.Statut == "Validée")
             {
@@ -220,12 +244,8 @@ namespace TechnoVIS.Controllers
                         int intervalleJours = 365 / activeMarche.VisitesAnnuellesPrevues;
                         equipement.ProchaineVisitePrevue = dateRealisee.AddDays(intervalleJours);
                         activeMarche.VisitesRealisees += 1;
-                        _logger.LogInformation("Prochaine visite pour l'équipement {EquipementId} recalculée au {ProchaineDate} (intervalle: {Intervalle} jours).",
-                            equipement.Id, equipement.ProchaineVisitePrevue, intervalleJours);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Impossible de recalculer ProchaineVisitePrevue pour l'équipement {EquipementId} : aucun marché actif ou VisitesAnnuellesPrevues <= 0.", equipement.Id);
+                        _logger.LogInformation("Prochaine visite pour l'équipement {EquipementId} recalculée au {ProchaineDate}.",
+                            equipement.Id, equipement.ProchaineVisitePrevue);
                     }
                 }
             }
@@ -234,29 +254,75 @@ namespace TechnoVIS.Controllers
             return Ok(visite);
         }
 
-        [HttpGet("{id}/techniciens-suggeres")]
-        public async Task<IActionResult> GetTechniciensSuggeres(int id)
+        /// <summary>
+        /// Moteur de recommandation dynamique de techniciens pour un équipement donné :
+        /// Retourne la liste classée par score décroissant avec le podium 🥇🥈🥉 et le détail 40/30/20/10.
+        /// </summary>
+        [HttpGet("recommandations-techniciens")]
+        public async Task<IActionResult> GetRecommandationsTechniciens(
+            [FromQuery] int equipementId, 
+            [FromQuery] DateTime? datePrevue = null, 
+            [FromQuery] int dureeMinutes = 120)
         {
-            var visite = await _context.Visites
-                .Include(v => v.Equipement)
-                .ThenInclude(e => e!.Site)
-                .FirstOrDefaultAsync(v => v.Id == id);
+            var equipement = await _context.Equipements
+                .Include(e => e.Site)
+                .FirstOrDefaultAsync(e => e.Id == equipementId);
 
-            if (visite == null || visite.Equipement == null) return NotFound(new { message = "Visite ou équipement non trouvé." });
+            if (equipement == null)
+            {
+                return NotFound(new { message = "Équipement non trouvé." });
+            }
 
+            var targetDate = datePrevue ?? DateTime.Now;
+
+            // Load all technicians with their specialties and visits to compute real-time capacity
             var techniciens = await _context.Techniciens
-                .Include(t => t.SiteRattache)
+                .Include(t => t.Specialites)
+                .Include(t => t.Visites)
                 .ToListAsync();
 
-            var suggestions = techniciens.Select(t => new
+            // Calculate weekly load
+            var startOfWeek = targetDate.Date.AddDays(-(int)targetDate.DayOfWeek + (int)DayOfWeek.Monday);
+            var endOfWeek = startOfWeek.AddDays(7);
+
+            var scoredList = techniciens.Select(t =>
             {
-                Technicien = t,
-                Score = _scoringService.CalculerScoreAffectationTechnicien(t, visite, visite.Equipement)
+                // Dynamic planned load calculation for that week
+                var visitesSemaine = t.Visites.Where(v => v.DatePrevue >= startOfWeek && v.DatePrevue < endOfWeek && (v.Statut == "Planifiée" || v.Statut == "En cours")).ToList();
+                t.HeuresPlanifiees = (int)Math.Ceiling(visitesSemaine.Sum(v => v.DureeEstimeeMinutes) / 60.0);
+
+                var evaluation = _scoringService.EvaluerTechnicien(t, equipement, targetDate, dureeMinutes);
+
+                int heuresRestantes = Math.Max(0, t.HeuresHebdo - t.HeuresPlanifiees);
+
+                return new
+                {
+                    TechnicienId = t.Id,
+                    t.Matricule,
+                    NomComplet = $"{t.Prenom} {t.Nom}".Trim(),
+                    t.Base,
+                    t.Disponible,
+                    t.Statut,
+                    t.HeuresHebdo,
+                    t.HeuresPlanifiees,
+                    HeuresRestantes = heuresRestantes,
+                    Specialites = t.Specialites.Select(s => s.Nom).ToList(),
+                    Score = evaluation.ScoreTotal,
+                    evaluation.ScoreCompetence,
+                    evaluation.ScoreDisponibilite,
+                    evaluation.ScoreCharge,
+                    evaluation.ScoreProximite,
+                    evaluation.DetailsCompetence,
+                    evaluation.DetailsDisponibilite,
+                    evaluation.DetailsCharge,
+                    evaluation.DetailsProximite
+                };
             })
             .OrderByDescending(s => s.Score)
+            .ThenByDescending(s => s.HeuresRestantes)
             .ToList();
 
-            return Ok(suggestions);
+            return Ok(scoredList);
         }
 
         // ── EXPORTS ─────────────────────────────────────────────────────────
@@ -279,12 +345,11 @@ namespace TechnoVIS.Controllers
 
             var visites = await query.OrderBy(v => v.DatePrevue).ToListAsync();
 
-            // Shared data transformation
             var headers = new string[] { "Référence", "Type", "Équipement", "Client / Site", "Technicien", "Date Prévue", "Statut" };
             var data = visites.Select(v => new string[]
             {
                 v.Reference,
-                v.TypeVisite,
+                v.TypeVisite == "Autre" && !string.IsNullOrWhiteSpace(v.TypeVisiteAutre) ? $"Autre ({v.TypeVisiteAutre})" : v.TypeVisite,
                 v.Equipement?.Nom ?? "",
                 $"{v.Equipement?.Site?.Client?.NomSociete} / {v.Equipement?.Site?.NomSite}",
                 v.Technicien != null ? $"{v.Technicien.Prenom} {v.Technicien.Nom}" : "Non assigné",
@@ -346,5 +411,6 @@ namespace TechnoVIS.Controllers
         public string Statut { get; set; } = string.Empty;
         public string? RapportTechnique { get; set; }
         public string? ActionsCorrectives { get; set; }
+        public int? DureeReelleMinutes { get; set; }
     }
 }
