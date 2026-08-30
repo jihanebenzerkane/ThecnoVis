@@ -227,7 +227,7 @@ namespace TechnoVIS.Services
                 return -1;
             }
 
-            int colSerial = Col("numéro de série", "numero de serie", "n° série", "n° serie", "serial", "serialnumber", "code", "matricule");
+            int colSerial = Col("numéro de série", "numero de serie", "numéro série", "numero serie", "n° série", "n° serie", "n° de série", "serial", "serialnumber", "code", "matricule");
             int colNom = Col("nom équipement", "nom equipement", "équipement", "equipement", "désignation", "designation", "nom");
             int colCat = Col("catégorie", "categorie", "type équipement", "type equipement", "famille");
             int colClient = Col("client", "société", "societe", "nom client");

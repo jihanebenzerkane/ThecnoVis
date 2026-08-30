@@ -12,7 +12,7 @@ namespace TechnoVIS.Models
         public int SiteId { get; set; }
         public Site? Site { get; set; }
         public DateTime DateInstallation { get; set; } = DateTime.UtcNow;
-        public int Criticiticite { get; set; } = 3; // 1 (Faible) à 5 (Critique)
+        public int Criticite { get; set; } = 3; // 1 (Faible) à 5 (Critique)
         public int ScoreSante { get; set; } = 85; // 0-100%
         public int ScoreRisque { get; set; } = 15; // 0-100 (calculé dynamiquement)
         public string Statut { get; set; } = "Opérationnel"; // Opérationnel, En Panne, Maintenance Requise, En Révision, Inactif

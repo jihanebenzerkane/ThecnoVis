@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,7 @@ namespace TechnoVIS.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Responsable")]
     public class EquipementsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -74,7 +76,7 @@ namespace TechnoVIS.Controllers
                     ClientId = e.Site?.ClientId,
                     ClientNom = e.Site?.Client?.NomSociete ?? "N/A",
                     e.DateInstallation,
-                    e.Criticiticite,
+                    e.Criticite,
                     e.ScoreSante,
                     ScoreRisque = dynamicScoreRisque,
                     e.Statut,
@@ -139,7 +141,7 @@ namespace TechnoVIS.Controllers
             item.Nom = updated.Nom;
             item.Categorie = updated.Categorie;
             item.SiteId = updated.SiteId;
-            item.Criticiticite = updated.Criticiticite;
+            item.Criticite = updated.Criticite;
             item.ScoreSante = updated.ScoreSante;
             item.Statut = updated.Statut;
             item.DateInstallation = updated.DateInstallation;
@@ -338,7 +340,7 @@ namespace TechnoVIS.Controllers
                         existing.Nom = string.IsNullOrWhiteSpace(row.Nom) ? existing.Nom : row.Nom.Trim();
                         existing.Categorie = string.IsNullOrWhiteSpace(row.Categorie) ? existing.Categorie : row.Categorie.Trim();
                         existing.SiteId = site.Id;
-                        existing.Criticiticite = row.Criticite > 0 ? row.Criticite : existing.Criticiticite;
+                        existing.Criticite = row.Criticite > 0 ? row.Criticite : existing.Criticite;
                         existing.ScoreSante = row.ScoreSante > 0 ? row.ScoreSante : existing.ScoreSante;
                         existing.Statut = string.IsNullOrWhiteSpace(row.Statut) ? existing.Statut : row.Statut;
                         if (row.DateInstallation != default) existing.DateInstallation = row.DateInstallation;
@@ -353,7 +355,7 @@ namespace TechnoVIS.Controllers
                             Nom = string.IsNullOrWhiteSpace(row.Nom) ? serial : row.Nom.Trim(),
                             Categorie = string.IsNullOrWhiteSpace(row.Categorie) ? "Général" : row.Categorie.Trim(),
                             SiteId = site.Id,
-                            Criticiticite = row.Criticite > 0 ? row.Criticite : 3,
+                            Criticite = row.Criticite > 0 ? row.Criticite : 3,
                             ScoreSante = row.ScoreSante > 0 ? row.ScoreSante : 85,
                             Statut = string.IsNullOrWhiteSpace(row.Statut) ? "Opérationnel" : row.Statut.Trim(),
                             DateInstallation = row.DateInstallation != default ? row.DateInstallation : DateTime.UtcNow,

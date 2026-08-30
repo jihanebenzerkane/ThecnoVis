@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -8,11 +9,13 @@ using System.Threading.Tasks;
 using System.Linq;
 using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 
 namespace TechnoVIS.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Responsable,Technicien")]
     public class VisitesController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -26,10 +29,32 @@ namespace TechnoVIS.Controllers
             _logger = logger;
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetVisites([FromQuery] string? statut, [FromQuery] int? technicienId, [FromQuery] string? technicien)
+        private int? GetCurrentTechnicienId()
         {
+            var techIdClaim = User.FindFirst("technicienId")?.Value;
+            if (int.TryParse(techIdClaim, out var techId) && techId > 0)
+            {
+                return techId;
+            }
+            return null;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetVisites(
+            [FromQuery] string? statut, 
+            [FromQuery] int? technicienId, 
+            [FromQuery] string? technicien,
+            [FromQuery] string? typeVisite,
+            [FromQuery] DateTime? dateDebut,
+            [FromQuery] DateTime? dateFin,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize)
+        {
+            var isTechnicien = User.IsInRole("Technicien");
+            var currentTechId = GetCurrentTechnicienId();
+
             var query = _context.Visites
+                .AsNoTracking()
                 .Include(v => v.Equipement)
                 .ThenInclude(e => e!.Site)
                 .ThenInclude(s => s!.Client)
@@ -37,18 +62,66 @@ namespace TechnoVIS.Controllers
                 .Include(v => v.Marche)
                 .AsQueryable();
 
+            // Sécurité RBAC : un technicien ne peut STRICTEMENT voir que ses propres visites
+            if (isTechnicien)
+            {
+                if (!currentTechId.HasValue)
+                {
+                    return Ok(new List<object>());
+                }
+                query = query.Where(v => v.TechnicienId == currentTechId.Value);
+            }
+            else
+            {
+                // Responsable / Admin : filtres optionnels
+                if (technicienId.HasValue)
+                {
+                    query = query.Where(v => v.TechnicienId == technicienId.Value);
+                }
+                if (!string.IsNullOrWhiteSpace(technicien))
+                {
+                    query = query.Where(v => v.Technicien != null &&
+                        (v.Technicien.Nom.Contains(technicien) || v.Technicien.Prenom.Contains(technicien)));
+                }
+            }
+
+            var today = DateTime.Today;
+
             if (!string.IsNullOrWhiteSpace(statut))
             {
-                query = query.Where(v => v.Statut == statut);
+                if (string.Equals(statut, "En retard", StringComparison.OrdinalIgnoreCase))
+                {
+                    query = query.Where(v => v.Statut == "En retard" || (v.Statut == "Planifiée" && v.DatePrevue < today));
+                }
+                else if (string.Equals(statut, "Planifiée", StringComparison.OrdinalIgnoreCase))
+                {
+                    query = query.Where(v => v.Statut == "Planifiée" && v.DatePrevue >= today);
+                }
+                else
+                {
+                    query = query.Where(v => v.Statut == statut);
+                }
             }
-            if (technicienId.HasValue)
+
+            if (!string.IsNullOrWhiteSpace(typeVisite))
             {
-                query = query.Where(v => v.TechnicienId == technicienId.Value);
+                query = query.Where(v => v.TypeVisite == typeVisite);
             }
-            if (!string.IsNullOrWhiteSpace(technicien))
+
+            if (dateDebut.HasValue)
             {
-                query = query.Where(v => v.Technicien != null &&
-                    (v.Technicien.Nom.Contains(technicien) || v.Technicien.Prenom.Contains(technicien)));
+                query = query.Where(v => v.DatePrevue >= dateDebut.Value);
+            }
+
+            if (dateFin.HasValue)
+            {
+                query = query.Where(v => v.DatePrevue <= dateFin.Value);
+            }
+
+            // Pagination optionnelle si demandée
+            if (page.HasValue && page.Value > 0 && pageSize.HasValue && pageSize.Value > 0)
+            {
+                query = query.Skip((page.Value - 1) * pageSize.Value).Take(pageSize.Value);
             }
 
             var result = await query
@@ -76,7 +149,7 @@ namespace TechnoVIS.Controllers
                     v.DateRealisee,
                     v.DureeEstimeeMinutes,
                     v.DureeReelleMinutes,
-                    v.Statut,
+                    Statut = (v.Statut == "Planifiée" && v.DatePrevue < today) ? "En retard" : v.Statut,
                     v.ScorePriorite,
                     v.RapportTechnique,
                     v.ActionsCorrectives
@@ -89,19 +162,11 @@ namespace TechnoVIS.Controllers
         [HttpGet("mes-visites")]
         public async Task<IActionResult> GetMesVisites([FromQuery] int? technicienId)
         {
-            var techIdClaim = User.FindFirst("technicienId")?.Value;
-            var emailClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+            var isTechnicien = User.IsInRole("Technicien");
+            var currentTechId = GetCurrentTechnicienId();
+            var today = DateTime.Today;
 
-            int? targetTechId = technicienId;
-            if (!targetTechId.HasValue && int.TryParse(techIdClaim, out var parsedId) && parsedId > 0)
-            {
-                targetTechId = parsedId;
-            }
-            else if (!targetTechId.HasValue && !string.IsNullOrWhiteSpace(emailClaim))
-            {
-                var tech = await _context.Techniciens.FirstOrDefaultAsync(t => t.Email == emailClaim);
-                targetTechId = tech?.Id;
-            }
+            int? targetTechId = isTechnicien ? currentTechId : (technicienId ?? currentTechId);
 
             var query = _context.Visites
                 .Include(v => v.Equipement)
@@ -114,6 +179,10 @@ namespace TechnoVIS.Controllers
             if (targetTechId.HasValue)
             {
                 query = query.Where(v => v.TechnicienId == targetTechId.Value);
+            }
+            else if (isTechnicien)
+            {
+                return Ok(new List<object>());
             }
 
             var result = await query
@@ -139,7 +208,7 @@ namespace TechnoVIS.Controllers
                     v.DateRealisee,
                     v.DureeEstimeeMinutes,
                     v.DureeReelleMinutes,
-                    v.Statut,
+                    Statut = (v.Statut == "Planifiée" && v.DatePrevue < today) ? "En retard" : v.Statut,
                     v.ScorePriorite,
                     v.RapportTechnique,
                     v.ActionsCorrectives
@@ -161,10 +230,22 @@ namespace TechnoVIS.Controllers
                 .FirstOrDefaultAsync(v => v.Id == id);
 
             if (visite == null) return NotFound(new { message = "Visite non trouvée." });
+
+            // Sécurité RBAC : un technicien ne peut pas consulter la visite d'un collègue
+            if (User.IsInRole("Technicien"))
+            {
+                var currentTechId = GetCurrentTechnicienId();
+                if (visite.TechnicienId != currentTechId)
+                {
+                    return Forbid();
+                }
+            }
+
             return Ok(visite);
         }
 
         [HttpPost]
+        [Authorize(Roles = "Responsable")]
         public async Task<IActionResult> CreateVisite([FromBody] Visite model)
         {
             if (model == null) return BadRequest(new { message = "Données invalides." });
@@ -188,15 +269,36 @@ namespace TechnoVIS.Controllers
             {
                 var year = DateTime.Now.Year;
                 var prefix = $"VIS-{year}-";
-                var maxNum = await _context.Visites
+                
+                var existingRefs = await _context.Visites
                     .Where(v => v.Reference.StartsWith(prefix))
-                    .CountAsync();
+                    .Select(v => v.Reference)
+                    .ToListAsync();
 
-                model.Reference = $"{prefix}{(maxNum + 1):D4}";
+                int maxSeq = 0;
+                foreach (var r in existingRefs)
+                {
+                    if (r.Length > prefix.Length && int.TryParse(r.Substring(prefix.Length), out int seq) && seq > maxSeq)
+                    {
+                        maxSeq = seq;
+                    }
+                }
+
+                model.Reference = $"{prefix}{(maxSeq + 1):D4}";
             }
 
             _context.Visites.Add(model);
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // En cas de collision concurrente immédiate, regénérer un numéro supérieur unique
+                var uniqueSuffix = Guid.NewGuid().ToString("N")[..4].ToUpper();
+                model.Reference = $"VIS-{DateTime.Now.Year}-{uniqueSuffix}";
+                await _context.SaveChangesAsync();
+            }
 
             return CreatedAtAction(nameof(GetVisiteById), new { id = model.Id }, model);
         }
@@ -206,6 +308,16 @@ namespace TechnoVIS.Controllers
         {
             var visite = await _context.Visites.FindAsync(id);
             if (visite == null) return NotFound();
+
+            // Sécurité RBAC : vérification de l'assignation du technicien
+            if (User.IsInRole("Technicien"))
+            {
+                var currentTechId = GetCurrentTechnicienId();
+                if (visite.TechnicienId != currentTechId)
+                {
+                    return Forbid();
+                }
+            }
 
             visite.Statut = update.Statut;
             if (!string.IsNullOrWhiteSpace(update.RapportTechnique))
@@ -255,10 +367,10 @@ namespace TechnoVIS.Controllers
         }
 
         /// <summary>
-        /// Moteur de recommandation dynamique de techniciens pour un équipement donné :
-        /// Retourne la liste classée par score décroissant avec le podium 🥇🥈🥉 et le détail 40/30/20/10.
+        /// Moteur de recommandation dynamique de techniciens pour un équipement donné (Réservé Responsable)
         /// </summary>
         [HttpGet("recommandations-techniciens")]
+        [Authorize(Roles = "Responsable")]
         public async Task<IActionResult> GetRecommandationsTechniciens(
             [FromQuery] int equipementId, 
             [FromQuery] DateTime? datePrevue = null, 
@@ -287,13 +399,12 @@ namespace TechnoVIS.Controllers
 
             var scoredList = techniciens.Select(t =>
             {
-                // Dynamic planned load calculation for that week
                 var visitesSemaine = t.Visites.Where(v => v.DatePrevue >= startOfWeek && v.DatePrevue < endOfWeek && (v.Statut == "Planifiée" || v.Statut == "En cours")).ToList();
-                t.HeuresPlanifiees = (int)Math.Ceiling(visitesSemaine.Sum(v => v.DureeEstimeeMinutes) / 60.0);
+                int heuresPlanifieesSemaine = (int)Math.Ceiling(visitesSemaine.Sum(v => v.DureeEstimeeMinutes) / 60.0);
 
-                var evaluation = _scoringService.EvaluerTechnicien(t, equipement, targetDate, dureeMinutes);
+                var evaluation = _scoringService.EvaluerTechnicien(t, equipement, targetDate, dureeMinutes, heuresPlanifieesSemaine);
 
-                int heuresRestantes = Math.Max(0, t.HeuresHebdo - t.HeuresPlanifiees);
+                int heuresRestantes = Math.Max(0, t.HeuresHebdo - heuresPlanifieesSemaine);
 
                 return new
                 {
@@ -304,7 +415,7 @@ namespace TechnoVIS.Controllers
                     t.Disponible,
                     t.Statut,
                     t.HeuresHebdo,
-                    t.HeuresPlanifiees,
+                    HeuresPlanifiees = heuresPlanifieesSemaine,
                     HeuresRestantes = heuresRestantes,
                     Specialites = t.Specialites.Select(s => s.Nom).ToList(),
                     Score = evaluation.ScoreTotal,
@@ -325,9 +436,10 @@ namespace TechnoVIS.Controllers
             return Ok(scoredList);
         }
 
-        // ── EXPORTS ─────────────────────────────────────────────────────────
+        // ── EXPORTS (Réservé Responsable) ─────────────────────────────────────────
 
         [HttpGet("export")]
+        [Authorize(Roles = "Responsable")]
         public async Task<IActionResult> ExportVisites([FromQuery] string? statut, [FromQuery] string format = "excel",
             [FromServices] PdfExportService? pdfService = null, [FromServices] CsvExportService? csvService = null)
         {
@@ -399,6 +511,17 @@ namespace TechnoVIS.Controllers
                 .FirstOrDefaultAsync(v => v.Id == id);
 
             if (visite == null) return NotFound(new { message = "Visite introuvable." });
+
+            // Sécurité RBAC : si technicien, vérifier l'assignation
+            if (User.IsInRole("Technicien"))
+            {
+                var currentTechId = GetCurrentTechnicienId();
+                if (visite.TechnicienId != currentTechId)
+                {
+                    return Forbid();
+                }
+            }
+
             if (visite.Statut != "Validée") return BadRequest(new { message = "Le PV ne peut être généré que pour une visite validée." });
 
             var pdfBytes = pdfService.GeneratePvPdf(visite);

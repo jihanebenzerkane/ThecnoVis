@@ -41,7 +41,7 @@ namespace TechnoVIS.Services
             var eqNom = visite.Equipement?.Nom ?? "Équipement N/A";
             var eqSerial = visite.Equipement?.SerialNumber ?? "N/A";
             var eqCat = visite.Equipement?.Categorie ?? "Général";
-            var eqCriticite = visite.Equipement?.Criticiticite ?? 3;
+            var eqCriticite = visite.Equipement?.Criticite ?? 3;
 
             var typeAffiche = visite.TypeVisite;
             if (visite.TypeVisite == "Autre" && !string.IsNullOrWhiteSpace(visite.TypeVisiteAutre))

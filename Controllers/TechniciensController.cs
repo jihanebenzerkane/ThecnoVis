@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -32,13 +33,16 @@ namespace TechnoVIS.Controllers
 
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "Responsable")]
     public class TechniciensController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IConfiguration _configuration;
 
-        public TechniciensController(AppDbContext context)
+        public TechniciensController(AppDbContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
 
         // GET: api/Techniciens
@@ -381,7 +385,18 @@ namespace TechnoVIS.Controllers
                     TechnicienId = tech.Id,
                     DateCreation = DateTime.UtcNow
                 };
-                user.PasswordHash = hasher.HashPassword(user, "Tech2026!");
+                var defaultPassword = _configuration["Technician:DefaultPassword"]
+                    ?? _configuration["Admin:DefaultPassword"]
+                    ?? Environment.GetEnvironmentVariable("TECHNICIAN_DEFAULT_PASSWORD")
+                    ?? Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD");
+
+                if (string.IsNullOrWhiteSpace(defaultPassword))
+                {
+                    // Aucun mot de passe par défaut n'est configuré : le compte sera créé manuellement via l'interface d'administration
+                    return;
+                }
+
+                user.PasswordHash = hasher.HashPassword(user, defaultPassword);
                 _context.Utilisateurs.Add(user);
                 await _context.SaveChangesAsync();
             }

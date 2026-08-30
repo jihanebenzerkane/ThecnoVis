@@ -28,11 +28,11 @@ namespace TechnoVIS.Services
             if (equipement == null) return 0;
 
             double scoreAge = Math.Min(40, (DateTime.Now - equipement.DateInstallation).TotalDays / 365.25 * 4);
-            double scoreCriticiticite = equipement.Criticiticite * 8.0; // 8 à 40
+            double scoreCriticite = equipement.Criticite * 8.0; // 8 à 40
             double joursSansVisite = (DateTime.Now - equipement.DerniereVisite).TotalDays;
             double scoreVusterite = Math.Min(20, Math.Max(0, joursSansVisite / 15.0));
 
-            int total = (int)Math.Round(scoreAge + scoreCriticiticite + scoreVusterite);
+            int total = (int)Math.Round(scoreAge + scoreCriticite + scoreVusterite);
             return Math.Clamp(total, 5, 98);
         }
 
@@ -73,10 +73,12 @@ namespace TechnoVIS.Services
         /// - 20% Charge de travail (équilibrage des heures planifiées)
         /// - 10% Proximité géographique (base agence ECS vs site client)
         /// </summary>
-        public TechnicienScoreDetail EvaluerTechnicien(Technicien technicien, Equipement equipement, DateTime datePrevue, int dureeEstimeeMinutes = 120)
+        public TechnicienScoreDetail EvaluerTechnicien(Technicien technicien, Equipement equipement, DateTime datePrevue, int dureeEstimeeMinutes = 120, int? heuresPlanifiees = null)
         {
             var res = new TechnicienScoreDetail();
             if (technicien == null || equipement == null) return res;
+
+            int planifiees = heuresPlanifiees ?? technicien.HeuresPlanifiees;
 
             // 1. Compétence (40%)
             var cat = equipement.Categorie ?? string.Empty;
@@ -110,7 +112,7 @@ namespace TechnoVIS.Services
             else
             {
                 int heuresHebdo = technicien.HeuresHebdo > 0 ? technicien.HeuresHebdo : 40;
-                int heuresRestantes = Math.Max(0, heuresHebdo - technicien.HeuresPlanifiees);
+                int heuresRestantes = Math.Max(0, heuresHebdo - planifiees);
                 double dureeHeures = Math.Ceiling(dureeEstimeeMinutes / 60.0);
 
                 if (heuresRestantes >= dureeHeures)
@@ -132,10 +134,10 @@ namespace TechnoVIS.Services
 
             // 3. Charge de travail (20%)
             int capacite = technicien.HeuresHebdo > 0 ? technicien.HeuresHebdo : 40;
-            double ratioCharge = (double)technicien.HeuresPlanifiees / capacite;
+            double ratioCharge = (double)planifiees / capacite;
             res.ScoreCharge = (int)Math.Round(Math.Max(0, (1.0 - Math.Min(1.0, ratioCharge)) * 20.0));
             int pctCharge = (int)Math.Round(ratioCharge * 100);
-            res.DetailsCharge = $"Charge {pctCharge}% ({technicien.HeuresPlanifiees}h/{capacite}h)";
+            res.DetailsCharge = $"Charge {pctCharge}% ({planifiees}h/{capacite}h)";
 
             // 4. Proximité (10%)
             var villeSite = equipement.Site?.Ville ?? string.Empty;

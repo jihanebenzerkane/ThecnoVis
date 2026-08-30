@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TechnoVIS.Data;
@@ -13,6 +14,7 @@ namespace TechnoVIS.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Responsable")]
     public class MarchesController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -316,7 +318,7 @@ namespace TechnoVIS.Controllers
                                     Categorie = categorie,
                                     SiteId = primarySite.Id,
                                     DateInstallation = row.DateDebut,
-                                    Criticiticite = 3,
+                                    Criticite = 3,
                                     ScoreSante = 85,
                                     ScoreRisque = 25,
                                     Statut = "Opérationnel",

@@ -1,91 +1,128 @@
 using Microsoft.EntityFrameworkCore;
 using TechnoVIS.Models;
-using System;
-using System.Collections.Generic;
 
-namespace TechnoVIS.Data
+namespace TechnoVIS.Data;
+
+public class AppDbContext : DbContext
 {
-    public class AppDbContext : DbContext
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options)
     {
-        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
-        {
-        }
+    }
 
-        public DbSet<Marche> Marches => Set<Marche>();
-        public DbSet<Client> Clients => Set<Client>();
-        public DbSet<Site> Sites => Set<Site>();
-        public DbSet<Equipement> Equipements => Set<Equipement>();
-        public DbSet<Visite> Visites => Set<Visite>();
-        public DbSet<Technicien> Techniciens => Set<Technicien>();
-        public DbSet<Specialite> Specialites => Set<Specialite>();
-        public DbSet<Utilisateur> Utilisateurs => Set<Utilisateur>();
+    // ========================================================
+    // Tables
+    // ========================================================
 
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
+    public DbSet<Marche> Marches => Set<Marche>();
+    public DbSet<Client> Clients => Set<Client>();
+    public DbSet<Site> Sites => Set<Site>();
+    public DbSet<Equipement> Equipements => Set<Equipement>();
+    public DbSet<Visite> Visites => Set<Visite>();
+    public DbSet<Technicien> Techniciens => Set<Technicien>();
+    public DbSet<Specialite> Specialites => Set<Specialite>();
+    public DbSet<Utilisateur> Utilisateurs => Set<Utilisateur>();
+    public DbSet<ApplicationSetting> ApplicationSettings
+        => Set<ApplicationSetting>();
 
-            // ── Unique Index constraints ───────────────────────────────
-            modelBuilder.Entity<Utilisateur>()
-                .HasIndex(u => u.Email)
-                .IsUnique();
 
-            modelBuilder.Entity<Client>()
-                .HasIndex(c => c.CodeClient)
-                .IsUnique();
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<Site>()
-                .HasIndex(s => s.CodeSite)
-                .IsUnique();
 
-            modelBuilder.Entity<Marche>()
-                .HasIndex(m => m.CodeMarche)
-                .IsUnique();
+        // ====================================================
+        // UNIQUE CONSTRAINTS / INDEXES
+        // ====================================================
 
-            modelBuilder.Entity<Equipement>()
-                .HasIndex(e => e.SerialNumber)
-                .IsUnique();
+        modelBuilder.Entity<Utilisateur>()
+            .HasIndex(u => u.Email)
+            .IsUnique();
 
-            modelBuilder.Entity<Visite>()
-                .HasIndex(v => v.Reference)
-                .IsUnique();
+        modelBuilder.Entity<Client>()
+            .HasIndex(c => c.CodeClient)
+            .IsUnique();
 
-            modelBuilder.Entity<Specialite>()
-                .HasIndex(s => s.Nom)
-                .IsUnique();
+        modelBuilder.Entity<Site>()
+            .HasIndex(s => s.CodeSite)
+            .IsUnique();
 
-            modelBuilder.Entity<Technicien>()
-                .HasIndex(t => t.Matricule)
-                .IsUnique();
+        modelBuilder.Entity<Marche>()
+            .HasIndex(m => m.CodeMarche)
+            .IsUnique();
 
-            // ── Many-to-Many Technicien ↔ Specialite ──────────────────
-            modelBuilder.Entity<Technicien>()
-                .HasMany(t => t.Specialites)
-                .WithMany(s => s.Techniciens)
-                .UsingEntity(j => j.ToTable("TechnicienSpecialites"));
+        modelBuilder.Entity<Equipement>()
+            .HasIndex(e => e.SerialNumber)
+            .IsUnique();
 
-            // ── Visite → Technicien (FK, nullable) ─────────────────────
-            modelBuilder.Entity<Visite>()
-                .HasOne(v => v.Technicien)
-                .WithMany(t => t.Visites)
-                .HasForeignKey(v => v.TechnicienId)
-                .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Visite>()
+            .HasIndex(v => v.Reference)
+            .IsUnique();
 
-            // ── Visite → Equipement (FK) ───────────────────────────────
-            modelBuilder.Entity<Visite>()
-                .HasOne(v => v.Equipement)
-                .WithMany(e => e.Visites)
-                .HasForeignKey(v => v.EquipementId)
-                .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Specialite>()
+            .HasIndex(s => s.Nom)
+            .IsUnique();
 
-            // ── Visite → Marche (FK, nullable) ─────────────────────────
-            modelBuilder.Entity<Visite>()
-                .HasOne(v => v.Marche)
-                .WithMany(m => m.Visites)
-                .HasForeignKey(v => v.MarcheId)
-                .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Technicien>()
+            .HasIndex(t => t.Matricule)
+            .IsUnique();
 
-            // ── NO SEED DATA IN ONMODELCREATING ────────────────────────
-            // Initial reference data (e.g. standard Specialites, default Admin) is initialized safely in Program.cs.
-        }
+
+        // ====================================================
+        // TECHNICIEN <-> SPECIALITE
+        // Many-to-Many relationship
+        // ====================================================
+
+        modelBuilder.Entity<Technicien>()
+            .HasMany(t => t.Specialites)
+            .WithMany(s => s.Techniciens)
+            .UsingEntity(j =>
+                j.ToTable("TechnicienSpecialites"));
+
+
+        // ====================================================
+        // VISITE -> TECHNICIEN
+        // A visit may not have a technician assigned yet.
+        // ====================================================
+
+        modelBuilder.Entity<Visite>()
+            .HasOne(v => v.Technicien)
+            .WithMany(t => t.Visites)
+            .HasForeignKey(v => v.TechnicienId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+
+        // ====================================================
+        // VISITE -> EQUIPEMENT
+        //
+        // We keep the visit history if an equipment record
+        // is removed or archived.
+        // ====================================================
+
+        modelBuilder.Entity<Visite>()
+            .HasOne(v => v.Equipement)
+            .WithMany(e => e.Visites)
+            .HasForeignKey(v => v.EquipementId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+
+        // ====================================================
+        // VISITE -> MARCHE
+        // A visit may optionally belong to a contract/market.
+        // ====================================================
+
+        modelBuilder.Entity<Visite>()
+            .HasOne(v => v.Marche)
+            .WithMany(m => m.Visites)
+            .HasForeignKey(v => v.MarcheId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+
+        // ====================================================
+        // NO SEED DATA HERE
+        //
+        // Initial application data is initialized separately
+        // during application startup.
+        // ====================================================
     }
 }

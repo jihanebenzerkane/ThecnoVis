@@ -10,6 +10,138 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
+<!-- ═══════════════════════════════════════════
+     AUTHENTICATION (Login, Forgot Password, Reset)
+═════════════════════════════════════════════ -->
+<div id="auth-container" class="auth-overlay" style="display: none;">
+  <div class="auth-card-container">
+
+    <!-- ── 1. LOGIN VIEW ── -->
+    <div id="auth-view-login" class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo-badge">
+          <img src="logo.svg" alt="TechnoVIS" class="auth-logo-img">
+        </div>
+        <h2 class="auth-title">Connexion</h2>
+        <p class="auth-subtitle">Plateforme Maintenance Industrielle Multi-Sites</p>
+      </div>
+
+      <div id="auth-login-error" class="auth-alert auth-alert-danger" style="display: none;"></div>
+
+      <form id="form-auth-login" class="auth-form">
+        <div class="auth-field">
+          <label for="login-identifier" class="auth-label">Identifiant</label>
+          <div class="auth-input-group">
+            <span class="auth-input-icon">👤</span>
+            <input type="text" id="login-identifier" class="auth-input" placeholder="Adresse e-mail ou Matricule" required autocomplete="username">
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <div class="auth-field-header">
+            <label for="login-password" class="auth-label">Mot de passe</label>
+            <button type="button" id="btn-goto-forgot" class="auth-link-btn">Mot de passe oublié ?</button>
+          </div>
+          <div class="auth-input-group">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="login-password" class="auth-input" placeholder="••••••••" required autocomplete="current-password">
+            <button type="button" id="btn-toggle-login-pwd" class="auth-pwd-toggle" title="Afficher/Masquer">👁️</button>
+          </div>
+        </div>
+
+        <button type="submit" id="btn-submit-login" class="btn btn-primary auth-submit-btn">
+          <span>Se connecter</span>
+          <span class="auth-btn-arrow">→</span>
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        <div class="auth-security-badge">
+          <span>🔒 Authentification sécurisée ASP.NET Core</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 2. FORGOT PASSWORD VIEW (Email Entry) ── -->
+    <div id="auth-view-forgot" class="auth-card" style="display: none;">
+      <div class="auth-header">
+        <button type="button" id="btn-back-to-login" class="auth-back-btn">← Retour à la connexion</button>
+        <div class="auth-logo-badge">
+          <span style="font-size: 1.4rem;">🔑</span>
+        </div>
+        <h2 class="auth-title">Mot de passe oublié</h2>
+        <p class="auth-subtitle">Saisissez l'adresse e-mail de votre compte pour recevoir un code de vérification.</p>
+      </div>
+
+      <div id="auth-forgot-alert" class="auth-alert" style="display: none;"></div>
+
+      <form id="form-auth-forgot" class="auth-form">
+        <div class="auth-field">
+          <label for="forgot-email" class="auth-label">Adresse e-mail</label>
+          <div class="auth-input-group">
+            <span class="auth-input-icon">✉️</span>
+            <input type="email" id="forgot-email" class="auth-input" placeholder="nom@entreprise.com" required autocomplete="email">
+          </div>
+        </div>
+
+        <button type="submit" id="btn-submit-forgot" class="btn btn-primary auth-submit-btn">
+          <span>Envoyer le code de vérification</span>
+          <span class="auth-btn-arrow">→</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- ── 3. RESET PASSWORD VIEW (Code + New Password) ── -->
+    <div id="auth-view-reset" class="auth-card" style="display: none;">
+      <div class="auth-header">
+        <button type="button" id="btn-back-to-forgot" class="auth-back-btn">← Modifier l'adresse e-mail</button>
+        <div class="auth-logo-badge">
+          <span style="font-size: 1.4rem;">🛡️</span>
+        </div>
+        <h2 class="auth-title">Nouveau mot de passe</h2>
+        <p class="auth-subtitle" id="reset-view-subtitle">Entrez le code de vérification à 6 chiffres reçu et définissez votre nouveau mot de passe.</p>
+      </div>
+
+      <div id="auth-reset-alert" class="auth-alert" style="display: none;"></div>
+
+      <form id="form-auth-reset" class="auth-form">
+        <input type="hidden" id="reset-email">
+
+        <div class="auth-field">
+          <label for="reset-code" class="auth-label">Code de vérification (6 chiffres)</label>
+          <div class="auth-input-group">
+            <span class="auth-input-icon">🔢</span>
+            <input type="text" id="reset-code" class="auth-input" placeholder="Ex: 123456" maxlength="6" pattern="[0-9]{6}" required autocomplete="one-time-code" style="letter-spacing: 4px; font-weight: 700; font-size: 1.1rem; text-align: center;">
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="reset-new-password" class="auth-label">Nouveau mot de passe</label>
+          <div class="auth-input-group">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="reset-new-password" class="auth-input" placeholder="Minimum 8 caractères" minlength="8" required autocomplete="new-password">
+            <button type="button" id="btn-toggle-reset-pwd" class="auth-pwd-toggle" title="Afficher/Masquer">👁️</button>
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="reset-confirm-password" class="auth-label">Confirmer le mot de passe</label>
+          <div class="auth-input-group">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="reset-confirm-password" class="auth-input" placeholder="Répéter le mot de passe" minlength="8" required autocomplete="new-password">
+          </div>
+        </div>
+
+        <button type="submit" id="btn-submit-reset" class="btn btn-primary auth-submit-btn">
+          <span>Enregistrer et se connecter</span>
+          <span class="auth-btn-arrow">✓</span>
+        </button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
 <div id="app">
 
   <!-- ═══════════════════════════════════════════
@@ -1214,6 +1346,83 @@
   </div>
   <div class="kpi-drawer-body" id="kpi-drawer-body"></div>
 </aside>
+
+<!-- ═══════════════════════════════════════════
+     MODAL — PROFIL UTILISATEUR & SESSION
+═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-user-profile">
+  <div class="modal-box" style="max-width: 460px;">
+    <div class="modal-header">
+      <h2 class="modal-title">👤 Profil Utilisateur</h2>
+      <button class="close-modal" id="close-modal-user-profile">✕</button>
+    </div>
+
+    <div style="padding: 10px 0 20px 0; text-align: center; border-bottom: 1px solid var(--border-light); margin-bottom: 18px;">
+      <div class="user-avatar-circle" id="profile-modal-avatar" style="width: 64px; height: 64px; font-size: 1.5rem; margin: 0 auto 12px;">AD</div>
+      <h3 id="profile-modal-name" style="font-size: 1.15rem; font-weight: 700; color: var(--text-primary);">Responsable Maintenance</h3>
+      <p id="profile-modal-email" style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px;">admin@technovis.ma</p>
+      <span class="badge badge-planifiee" id="profile-modal-role" style="margin-top: 8px; display: inline-block;">Responsable</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px; font-size: 0.85rem; margin-bottom: 24px;">
+      <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border-light);">
+        <span style="color: var(--text-secondary);">Identifiant / Matricule</span>
+        <strong id="profile-modal-matricule">—</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border-light);">
+        <span style="color: var(--text-secondary);">Base d'affectation</span>
+        <strong id="profile-modal-base">—</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+        <span style="color: var(--text-secondary);">Date de création</span>
+        <span id="profile-modal-date" style="color: var(--text-muted);">—</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <button type="button" class="btn btn-secondary" id="btn-open-change-password" style="width: 100%; justify-content: center;">
+        🔒 Modifier mon mot de passe
+      </button>
+      <button type="button" class="btn btn-secondary" id="btn-user-logout" style="width: 100%; justify-content: center; color: var(--danger); border-color: rgba(255, 59, 48, 0.3);">
+        🚪 Se déconnecter
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     MODAL — CHANGER LE MOT DE PASSE
+═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-change-password">
+  <div class="modal-box" style="max-width: 440px;">
+    <div class="modal-header">
+      <h2 class="modal-title">🔒 Modifier le mot de passe</h2>
+      <button class="close-modal" id="close-modal-change-password">✕</button>
+    </div>
+
+    <form id="form-change-password" style="margin-top: 10px;">
+      <div class="form-group">
+        <label for="change-pwd-current">Mot de passe actuel</label>
+        <input type="password" class="form-control" id="change-pwd-current" placeholder="••••••••" required>
+      </div>
+
+      <div class="form-group">
+        <label for="change-pwd-new">Nouveau mot de passe</label>
+        <input type="password" class="form-control" id="change-pwd-new" placeholder="Minimum 8 caractères" minlength="8" required>
+      </div>
+
+      <div class="form-group">
+        <label for="change-pwd-confirm">Confirmer le nouveau mot de passe</label>
+        <input type="password" class="form-control" id="change-pwd-confirm" placeholder="Confirmer le mot de passe" minlength="8" required>
+      </div>
+
+      <div class="form-actions" style="margin-top: 24px;">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-change-pwd">Annuler</button>
+        <button type="submit" class="btn btn-primary" id="btn-submit-change-pwd">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- Toast notifications -->
 <div id="toast-container"></div>

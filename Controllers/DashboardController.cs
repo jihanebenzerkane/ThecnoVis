@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TechnoVIS.Data;
@@ -9,6 +10,7 @@ namespace TechnoVIS.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Responsable")]
     public class DashboardController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -21,9 +23,10 @@ namespace TechnoVIS.Controllers
         [HttpGet("stats")]
         public async Task<IActionResult> GetStats()
         {
+            var today = DateTime.Today;
             var totalVisites = await _context.Visites.CountAsync();
-            var visitesPlanifiees = await _context.Visites.CountAsync(v => v.Statut == "Planifiée");
-            var visitesEnRetard = await _context.Visites.CountAsync(v => v.Statut == "En retard");
+            var visitesPlanifiees = await _context.Visites.CountAsync(v => v.Statut == "Planifiée" && v.DatePrevue >= today);
+            var visitesEnRetard = await _context.Visites.CountAsync(v => v.Statut == "En retard" || (v.Statut == "Planifiée" && v.DatePrevue < today));
             var visitesValidees = await _context.Visites.CountAsync(v => v.Statut == "Validée");
 
             var totalEquipements = await _context.Equipements.CountAsync();
@@ -33,7 +36,7 @@ namespace TechnoVIS.Controllers
             var alertesVisites = await _context.Visites
                 .Include(v => v.Equipement)
                 .ThenInclude(e => e!.Site)
-                .Where(v => v.Statut == "En retard" || v.ScorePriorite >= 80)
+                .Where(v => v.Statut == "En retard" || (v.Statut == "Planifiée" && v.DatePrevue < today) || v.ScorePriorite >= 80)
                 .OrderByDescending(v => v.ScorePriorite)
                 .Take(5)
                 .Select(v => new
@@ -77,7 +80,7 @@ namespace TechnoVIS.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Vider complètement toutes les tables opérationnelles sans réinjecter de fausses données
+                // Vider complètement toutes les tables opérationnelles
                 _context.Visites.RemoveRange(_context.Visites);
                 _context.Equipements.RemoveRange(_context.Equipements);
                 _context.Marches.RemoveRange(_context.Marches);
@@ -90,7 +93,7 @@ namespace TechnoVIS.Controllers
 
                 return Ok(new
                 {
-                    message = "Toutes les tables ont été vidées avec succès (0 donnée résiduelle).",
+                    message = "Toutes les tables ont été réinitialisées avec succès.",
                     clients = 0,
                     sites = 0,
                     techniciens = 0,

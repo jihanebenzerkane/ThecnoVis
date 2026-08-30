@@ -27,6 +27,7 @@ const DEFAULT_COMPANY_SETTINGS = {
 
 const App = {
   state: {
+    user: null,
     currentTab: "dashboard",
     isOffline: false,
     settings: { ...DEFAULT_COMPANY_SETTINGS },
@@ -41,58 +42,412 @@ const App = {
     currentMonth: new Date(2026, 7, 1) // Août 2026
   },
 
-  init() {
+  async init() {
     console.log("TechnoVIS Initialisation...");
-    
-    // 1. Charger & appliquer les paramètres entreprise / personnalisation
-    this.loadCompanySettings();
-    this.applyCompanySettings();
 
-    // 2. Restaurer l'état du panneau latéral
+    // 1. Restaurer l'état du panneau latéral
     if (localStorage.getItem("technovis_sidebar_collapsed") === "1") {
       document.body.classList.add("sidebar-collapsed");
     }
 
-    // 3. Configurer les écouteurs d'événements & charger les données
+    // 2. Configurer tous les écouteurs d'événements
     this.setupEventListeners();
+    this.setupAuthListeners();
     this.setupKpiDrawerListeners();
 
-    this.loadAllData().then(() => {
-      setTimeout(() => {
-        const preloader = document.getElementById("preloader");
-        if (preloader) {
-          preloader.classList.add("preloader-hide");
-          setTimeout(() => preloader.style.display = 'none', 600);
+    // 3. Vérifier la session utilisateur existante
+    const isAuthenticated = await this.checkAuth();
+
+    if (isAuthenticated) {
+      this.showApp();
+      await this.loadCompanySettings();
+      await this.loadAllData();
+    } else {
+      this.showAuthScreen();
+    }
+
+    // 4. Masquer le preloader
+    const preloader = document.getElementById("preloader");
+    if (preloader) {
+      preloader.classList.add("preloader-hide");
+      setTimeout(() => preloader.style.display = 'none', 600);
+    }
+  },
+
+  /* ------------------------------------------------------------------------
+   * 0a. AUTHENTIFICATION & GESTION DE SESSION
+   * ------------------------------------------------------------------------ */
+  async checkAuth() {
+    try {
+      const user = await this.fetchApi("/api/auth/me");
+      if (user && user.id) {
+        this.state.user = user;
+        this.updateUserProfileUI();
+        return true;
+      }
+      this.state.user = null;
+      return false;
+    } catch {
+      this.state.user = null;
+      return false;
+    }
+  },
+
+  showAuthScreen() {
+    const authContainer = document.getElementById("auth-container");
+    const appEl = document.getElementById("app");
+    if (authContainer) authContainer.style.display = "flex";
+    if (appEl) appEl.style.display = "none";
+    this.switchAuthView("login");
+  },
+
+  showApp() {
+    const authContainer = document.getElementById("auth-container");
+    const appEl = document.getElementById("app");
+    if (authContainer) authContainer.style.display = "none";
+    if (appEl) appEl.style.display = "flex";
+  },
+
+  switchAuthView(viewName) {
+    const loginView = document.getElementById("auth-view-login");
+    const forgotView = document.getElementById("auth-view-forgot");
+    const resetView = document.getElementById("auth-view-reset");
+
+    if (loginView) loginView.style.display = viewName === "login" ? "block" : "none";
+    if (forgotView) forgotView.style.display = viewName === "forgot" ? "block" : "none";
+    if (resetView) resetView.style.display = viewName === "reset" ? "block" : "none";
+
+    const loginErr = document.getElementById("auth-login-error");
+    if (loginErr) { loginErr.style.display = "none"; loginErr.textContent = ""; }
+    const forgotAlert = document.getElementById("auth-forgot-alert");
+    if (forgotAlert) { forgotAlert.style.display = "none"; forgotAlert.textContent = ""; }
+    const resetAlert = document.getElementById("auth-reset-alert");
+    if (resetAlert) { resetAlert.style.display = "none"; resetAlert.textContent = ""; }
+  },
+
+  updateUserProfileUI() {
+    const u = this.state.user;
+    if (!u) return;
+
+    const initials = (u.nomComplet || u.email || "TV")
+      .split(" ")
+      .map(part => part[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+
+    // Sidebar widgets
+    const avatarEl = document.getElementById("user-avatar-initials");
+    const nameEl = document.getElementById("user-display-name");
+    const roleEl = document.getElementById("user-display-role");
+
+    if (avatarEl) avatarEl.textContent = initials;
+    if (nameEl) nameEl.textContent = u.nomComplet || u.email;
+    if (roleEl) roleEl.textContent = u.role === "Responsable" ? "Responsable Maintenance" : `Technicien (${u.matricule || 'Terrain'})`;
+
+    // Modal Profile widgets
+    const modalAvatar = document.getElementById("profile-modal-avatar");
+    const modalName = document.getElementById("profile-modal-name");
+    const modalEmail = document.getElementById("profile-modal-email");
+    const modalRole = document.getElementById("profile-modal-role");
+    const modalMatricule = document.getElementById("profile-modal-matricule");
+    const modalBase = document.getElementById("profile-modal-base");
+    const modalDate = document.getElementById("profile-modal-date");
+
+    if (modalAvatar) modalAvatar.textContent = initials;
+    if (modalName) modalName.textContent = u.nomComplet || u.email;
+    if (modalEmail) modalEmail.textContent = u.email;
+    if (modalRole) {
+      modalRole.textContent = u.role;
+      modalRole.className = `badge ${u.role === 'Responsable' ? 'badge-planifiee' : 'badge-validee'}`;
+    }
+    if (modalMatricule) modalMatricule.textContent = u.matricule || "N/A (Compte Direction)";
+    if (modalBase) modalBase.textContent = u.base || "Toutes les bases (Siège)";
+    if (modalDate) {
+      modalDate.textContent = u.dateCreation
+        ? new Date(u.dateCreation).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })
+        : "—";
+    }
+  },
+
+  setupAuthListeners() {
+    // 1. Soumission Login
+    document.getElementById("form-auth-login")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const identifier = document.getElementById("login-identifier")?.value?.trim();
+      const password = document.getElementById("login-password")?.value;
+      const errorDiv = document.getElementById("auth-login-error");
+      const submitBtn = document.getElementById("btn-submit-login");
+
+      if (errorDiv) { errorDiv.style.display = "none"; errorDiv.textContent = ""; }
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = `<span>Connexion en cours…</span>`; }
+
+      try {
+        const res = await this.fetchApi("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: identifier, password })
+        });
+
+        if (res && res.email) {
+          this.state.user = res;
+          this.updateUserProfileUI();
+          this.showApp();
+          this.showToast(`Bienvenue, ${res.nomComplet || res.email} !`);
+          await this.loadCompanySettings();
+          await this.loadAllData();
         }
-      }, 700);
+      } catch (err) {
+        if (errorDiv) {
+          errorDiv.textContent = err.message || "Identifiant ou mot de passe incorrect.";
+          errorDiv.style.display = "block";
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<span>Se connecter</span><span class="auth-btn-arrow">→</span>`;
+        }
+      }
+    });
+
+    // 2. Boutons de navigation Auth
+    document.getElementById("btn-goto-forgot")?.addEventListener("click", () => {
+      this.switchAuthView("forgot");
+    });
+    document.getElementById("btn-back-to-login")?.addEventListener("click", () => {
+      this.switchAuthView("login");
+    });
+    document.getElementById("btn-back-to-forgot")?.addEventListener("click", () => {
+      this.switchAuthView("forgot");
+    });
+
+    // 3. Soumission Mot de passe oublié (Email)
+    document.getElementById("form-auth-forgot")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("forgot-email")?.value?.trim();
+      const alertDiv = document.getElementById("auth-forgot-alert");
+      const submitBtn = document.getElementById("btn-submit-forgot");
+
+      if (alertDiv) { alertDiv.style.display = "none"; alertDiv.textContent = ""; }
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = `<span>Vérification…</span>`; }
+
+      try {
+        const res = await this.fetchApi("/api/auth/forgot-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email })
+        });
+
+        this.showToast(res.message || "Code de vérification envoyé !");
+        document.getElementById("reset-email").value = email;
+        const resetSub = document.getElementById("reset-view-subtitle");
+        if (resetSub) {
+          resetSub.textContent = `Un code de vérification à 6 chiffres a été envoyé à ${email}.`;
+        }
+        this.switchAuthView("reset");
+      } catch (err) {
+        if (alertDiv) {
+          alertDiv.className = "auth-alert auth-alert-danger";
+          alertDiv.textContent = err.message || "Aucun compte n'est associé à cette adresse e-mail.";
+          alertDiv.style.display = "block";
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<span>Envoyer le code de vérification</span><span class="auth-btn-arrow">→</span>`;
+        }
+      }
+    });
+
+    // 4. Soumission Réinitialisation (Code + Nouveau mot de passe)
+    document.getElementById("form-auth-reset")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("reset-email")?.value?.trim();
+      const code = document.getElementById("reset-code")?.value?.trim();
+      const newPassword = document.getElementById("reset-new-password")?.value;
+      const confirmPassword = document.getElementById("reset-confirm-password")?.value;
+      const alertDiv = document.getElementById("auth-reset-alert");
+      const submitBtn = document.getElementById("btn-submit-reset");
+
+      if (newPassword !== confirmPassword) {
+        if (alertDiv) {
+          alertDiv.className = "auth-alert auth-alert-danger";
+          alertDiv.textContent = "Les deux mots de passe ne correspondent pas.";
+          alertDiv.style.display = "block";
+        }
+        return;
+      }
+
+      if (newPassword.length < 8) {
+        if (alertDiv) {
+          alertDiv.className = "auth-alert auth-alert-danger";
+          alertDiv.textContent = "Le mot de passe doit comporter au moins 8 caractères.";
+          alertDiv.style.display = "block";
+        }
+        return;
+      }
+
+      if (alertDiv) { alertDiv.style.display = "none"; alertDiv.textContent = ""; }
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = `<span>Enregistrement…</span>`; }
+
+      try {
+        const res = await this.fetchApi("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, code, newPassword })
+        });
+
+        this.showToast(res.message || "Mot de passe réinitialisé avec succès !");
+        this.switchAuthView("login");
+        const loginInput = document.getElementById("login-identifier");
+        if (loginInput) loginInput.value = email;
+        const loginPwd = document.getElementById("login-password");
+        if (loginPwd) loginPwd.value = "";
+      } catch (err) {
+        if (alertDiv) {
+          alertDiv.className = "auth-alert auth-alert-danger";
+          alertDiv.textContent = err.message || "Code invalide ou expiré.";
+          alertDiv.style.display = "block";
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<span>Enregistrer et se connecter</span><span class="auth-btn-arrow">✓</span>`;
+        }
+      }
+    });
+
+    // 5. Toggles de visibilité du mot de passe
+    document.getElementById("btn-toggle-login-pwd")?.addEventListener("click", () => {
+      const input = document.getElementById("login-password");
+      if (!input) return;
+      input.type = input.type === "password" ? "text" : "password";
+    });
+    document.getElementById("btn-toggle-reset-pwd")?.addEventListener("click", () => {
+      const input = document.getElementById("reset-new-password");
+      if (!input) return;
+      input.type = input.type === "password" ? "text" : "password";
+    });
+
+    // 6. Gestion du Profil & Déconnexion
+    document.getElementById("user-profile-btn")?.addEventListener("click", () => {
+      this.openModal("modal-user-profile");
+    });
+    document.getElementById("close-modal-user-profile")?.addEventListener("click", () => {
+      this.closeModal("modal-user-profile");
+    });
+    document.getElementById("btn-user-logout")?.addEventListener("click", async () => {
+      if (confirm("Voulez-vous vraiment vous déconnecter ?")) {
+        try {
+          await this.fetchApi("/api/auth/logout", { method: "POST" });
+        } catch {}
+        this.state.user = null;
+        this.closeModal("modal-user-profile");
+        this.showAuthScreen();
+        this.showToast("Déconnexion réussie.");
+      }
+    });
+
+    // 7. Modification du mot de passe dans l'app
+    document.getElementById("btn-open-change-password")?.addEventListener("click", () => {
+      this.closeModal("modal-user-profile");
+      document.getElementById("form-change-password").reset();
+      this.openModal("modal-change-password");
+    });
+    document.getElementById("close-modal-change-password")?.addEventListener("click", () => {
+      this.closeModal("modal-change-password");
+    });
+    document.getElementById("btn-cancel-change-pwd")?.addEventListener("click", () => {
+      this.closeModal("modal-change-password");
+    });
+    document.getElementById("form-change-password")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const currentPassword = document.getElementById("change-pwd-current")?.value;
+      const newPassword = document.getElementById("change-pwd-new")?.value;
+      const confirmPassword = document.getElementById("change-pwd-confirm")?.value;
+
+      if (newPassword !== confirmPassword) {
+        this.showToast("Les deux nouveaux mots de passe ne correspondent pas.", "error");
+        return;
+      }
+
+      try {
+        const res = await this.fetchApi("/api/auth/change-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currentPassword, newPassword })
+        });
+
+        this.closeModal("modal-change-password");
+        this.showToast(res.message || "Mot de passe modifié avec succès !");
+      } catch (err) {
+        this.showToast(err.message || "Erreur lors de la modification du mot de passe.", "error");
+      }
     });
   },
 
   /* ------------------------------------------------------------------------
-   * 0. PARAMÈTRES ENTREPRISE & PERSONNALISATION (WHITE-LABEL)
+   * 0. PARAMÈTRES ENTREPRISE & PERSONNALISATION (WHITE-LABEL VIA API)
    * ------------------------------------------------------------------------ */
-  loadCompanySettings() {
+  async loadCompanySettings() {
     try {
-      const saved = localStorage.getItem("technovis_company_settings");
-      if (saved) {
-        this.state.settings = { ...DEFAULT_COMPANY_SETTINGS, ...JSON.parse(saved) };
+      const settings = await this.fetchApi("/api/settings", {
+        credentials: "include"
+      });
+
+      if (settings) {
+        this.state.settings = {
+          ...DEFAULT_COMPANY_SETTINGS,
+          ...settings
+        };
       } else {
         this.state.settings = { ...DEFAULT_COMPANY_SETTINGS };
       }
     } catch (e) {
-      console.warn("Impossible de charger les paramètres, utilisation des valeurs par défaut", e);
+      console.warn("Impossible de charger les paramètres depuis l'API, utilisation des valeurs par défaut", e);
       this.state.settings = { ...DEFAULT_COMPANY_SETTINGS };
     }
+    this.applyCompanySettings();
   },
 
-  saveCompanySettings() {
+  async saveCompanySettings() {
     try {
-      localStorage.setItem("technovis_company_settings", JSON.stringify(this.state.settings));
+      const payload = {
+        companyName: this.state.settings.companyName,
+        companySlogan: this.state.settings.companySlogan,
+        companyEmail: this.state.settings.companyEmail,
+        companyPhone: this.state.settings.companyPhone,
+        companyAddress: this.state.settings.companyAddress,
+        primaryColor: this.state.settings.primaryColor,
+        themeMode: this.state.settings.themeMode,
+        agences: this.state.settings.agences || [],
+        defaultHours: parseInt(this.state.settings.defaultHours) || 40,
+        defaultSla: parseInt(this.state.settings.defaultSla) || 24,
+        defaultCurrency: this.state.settings.defaultCurrency || "MAD",
+        defaultVisiteDuration: parseInt(this.state.settings.defaultVisiteDuration) || 120
+      };
+
+      const result = await this.fetchApi("/api/settings", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify(payload)
+      });
+
+      if (result) {
+        this.state.settings = {
+          ...DEFAULT_COMPANY_SETTINGS,
+          ...result
+        };
+      }
+
       this.applyCompanySettings();
       this.showToast("Paramètres et personnalisation enregistrés avec succès !");
     } catch (e) {
-      console.error(e);
-      this.showToast("Erreur lors de l'enregistrement des paramètres.", "error");
+      console.error("Erreur lors de la sauvegarde des paramètres:", e);
+      this.showToast(e.message || "Erreur lors de l'enregistrement des paramètres.", "error");
     }
   },
 
@@ -231,21 +586,78 @@ const App = {
    * ------------------------------------------------------------------------ */
   async fetchApi(endpoint, options = {}) {
     try {
-      const response = await fetch(endpoint, options);
+      const defaultOptions = {
+        credentials: "include",
+        headers: {
+          "Accept": "application/json"
+        }
+      };
+
+      const mergedOptions = {
+        ...defaultOptions,
+        ...options,
+        headers: {
+          ...defaultOptions.headers,
+          ...(options.headers || {})
+        }
+      };
+
+      const response = await fetch(endpoint, mergedOptions);
+
       if (!response.ok) {
         let errBody = null;
         try { errBody = await response.json(); } catch {}
-        throw new Error(errBody?.message || errBody?.error || `HTTP ${response.status}`);
+
+        const errorMessage = errBody?.message || errBody?.error || `Erreur HTTP ${response.status}`;
+
+        if (response.status === 401) {
+          this.setOnlineStatus(false);
+          console.warn(`[401 Non Authentifié] Session expirée ou non connectée (${endpoint})`);
+          if (this.state.user && !endpoint.includes("/api/auth/login") && !endpoint.includes("/api/auth/me")) {
+            this.state.user = null;
+            this.showAuthScreen();
+            this.showToast("Votre session a expiré. Veuillez vous reconnecter.", "error");
+          }
+          throw new Error(errorMessage || "Session expirée. Veuillez vous reconnecter.");
+        }
+
+        if (response.status === 403) {
+          console.warn(`[403 Accès Refusé] Permissions insuffisantes (${endpoint})`);
+          this.showToast("Accès refusé : vous n'avez pas les droits nécessaires.", "error");
+          throw new Error(errorMessage || "Accès refusé.");
+        }
+
+        if (response.status === 404) {
+          throw new Error(errorMessage || "Ressource introuvable.");
+        }
+
+        if (response.status >= 500) {
+          this.setOnlineStatus(false);
+          throw new Error(errorMessage || "Erreur interne du serveur.");
+        }
+
+        throw new Error(errorMessage);
       }
-      const data = await response.json();
+
       this.setOnlineStatus(true);
-      if (data && !Array.isArray(data) && Array.isArray(data.value)) {
-        return data.value;
+
+      if (response.status === 204) {
+        return null;
       }
-      return data;
+
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const data = await response.json();
+        if (data && !Array.isArray(data) && Array.isArray(data.value)) {
+          return data.value;
+        }
+        return data;
+      }
+
+      return await response.text();
     } catch (error) {
-      console.warn(`Erreur API (${endpoint}):`, error);
-      return null;
+      console.warn(`Erreur API (${endpoint}):`, error.message || error);
+      throw error;
     }
   },
 
@@ -266,7 +678,7 @@ const App = {
 
   async loadAllData() {
     try {
-      const [statsData, visitesData, equipementsData, techniciensData, specialitesData, clientsData, marchesData] = await Promise.all([
+      const results = await Promise.allSettled([
         this.fetchApi("/api/dashboard/stats"),
         this.fetchApi("/api/visites"),
         this.fetchApi("/api/equipements"),
@@ -275,6 +687,16 @@ const App = {
         this.fetchApi("/api/clients"),
         this.fetchApi("/api/marches")
       ]);
+
+      const [statsRes, visitesRes, equipementsRes, techniciensRes, specialitesRes, clientsRes, marchesRes] = results;
+
+      const statsData = statsRes.status === "fulfilled" ? statsRes.value : null;
+      const visitesData = visitesRes.status === "fulfilled" ? visitesRes.value : [];
+      const equipementsData = equipementsRes.status === "fulfilled" ? equipementsRes.value : [];
+      const techniciensData = techniciensRes.status === "fulfilled" ? techniciensRes.value : [];
+      const specialitesData = specialitesRes.status === "fulfilled" ? specialitesRes.value : [];
+      const clientsData = clientsRes.status === "fulfilled" ? clientsRes.value : [];
+      const marchesData = marchesRes.status === "fulfilled" ? marchesRes.value : [];
 
       this.state.stats = statsData || this.calculateFallbackStats(visitesData, equipementsData);
       this.state.visites = visitesData || [];
@@ -288,6 +710,7 @@ const App = {
       this.populateActiveTechViewSelect();
     } catch (e) {
       console.error("Erreur lors du chargement des données:", e);
+      this.showToast("Erreur lors du chargement des données depuis l'API.", "error");
     }
   },
 
@@ -608,7 +1031,7 @@ const App = {
         break;
 
       case "critiques":
-        const critiques = this.state.equipements.filter(e => (e.scoreRisque || 0) >= 70 || (e.criticiticite || 0) >= 4);
+        const critiques = this.state.equipements.filter(e => (e.scoreRisque || 0) >= 70 || (e.criticite || 0) >= 4);
         titleEl.textContent = "Équipements Critiques";
         subEl.textContent = `${critiques.length} équipement(s) à risque élevé`;
         this.renderKpiEquipementsList(critiques, bodyEl);
@@ -690,7 +1113,7 @@ const App = {
         </div>
         <div style="font-weight:600; font-size:0.92rem;">${e.nom}</div>
         <div style="font-size:0.8rem; color:var(--text-secondary);">
-          Catégorie : <span class="spec-badge">${e.categorie}</span> • Criticité : <strong>${e.criticiticite || 3}/5</strong>
+          Catégorie : <span class="spec-badge">${e.categorie}</span> • Criticité : <strong>${e.criticite || 3}/5</strong>
         </div>
         <div style="font-size:0.78rem; color:var(--text-muted);">
           🏢 ${e.clientNom || 'Client N/A'} — 📍 ${e.siteNom || 'Site N/A'}
@@ -1054,7 +1477,7 @@ const App = {
           <div style="font-weight:500;">${e.clientNom || 'Client N/A'}</div>
           <small style="color:var(--text-muted);">${e.siteNom || 'Site N/A'} (${e.siteVille || ''})</small>
         </td>
-        <td>Criticité ${e.criticiticite || 3}/5</td>
+        <td>Criticité ${e.criticite || 3}/5</td>
         <td><span class="badge ${riskClass}">${scoreRisque} / 100</span></td>
         <td><span class="badge ${e.statut === 'Opérationnel' ? 'badge-validee' : 'badge-retard'}">${e.statut}</span></td>
         <td>${lastVisit}</td>
@@ -1097,7 +1520,7 @@ const App = {
       nomInput.value = eq.nom;
       catSelect.value = eq.categorie;
       siteSelect.value = eq.siteId;
-      critInput.value = eq.criticiticite;
+      critInput.value = eq.criticite;
       santeInput.value = eq.scoreSante;
       dateInput.value = eq.dateInstallation ? eq.dateInstallation.split("T")[0] : new Date().toISOString().split("T")[0];
       statutSelect.value = eq.statut;
@@ -1123,7 +1546,7 @@ const App = {
     const nom = document.getElementById("form-equipement-nom").value;
     const categorie = document.getElementById("form-equipement-categorie").value;
     const siteId = parseInt(document.getElementById("form-equipement-site").value);
-    const criticiticite = parseInt(document.getElementById("form-equipement-criticite").value);
+    const criticite = parseInt(document.getElementById("form-equipement-criticite").value);
     const scoreSante = parseInt(document.getElementById("form-equipement-sante").value);
     const dateInstallation = document.getElementById("form-equipement-date").value;
     const statut = document.getElementById("form-equipement-statut").value;
@@ -1134,45 +1557,46 @@ const App = {
       nom,
       categorie,
       siteId,
-      criticiticite,
+      criticite,
       scoreSante,
       dateInstallation: new Date(dateInstallation).toISOString(),
       statut
     };
 
-    let res;
-    if (id) {
-      res = await this.fetchApi(`/api/equipements/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-    } else {
-      res = await this.fetchApi("/api/equipements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-    }
+    try {
+      let res;
+      if (id) {
+        res = await this.fetchApi(`/api/equipements/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        res = await this.fetchApi("/api/equipements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      }
 
-    if (!res) {
-      this.showToast("Erreur lors de l'enregistrement de l'équipement.", "error");
-      return;
+      this.closeModal("modal-equipement");
+      this.showToast(`Équipement ${res?.nom || nom || ''} enregistré avec succès !`);
+      this.loadAllData();
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur lors de l'enregistrement de l'équipement.", "error");
     }
-
-    this.closeModal("modal-equipement");
-    this.showToast(`Équipement ${res.nom || ''} enregistré avec succès !`);
-    this.loadAllData();
   },
 
   async handleDeleteEquipement(id) {
     if (!confirm("Voulez-vous vraiment supprimer cet équipement ?")) return;
-    const resp = await fetch(`/api/equipements/${id}`, { method: "DELETE" });
-    if (resp.ok) {
-      this.showToast("Équipement supprimé.");
+    try {
+      await this.fetchApi(`/api/equipements/${id}`, { method: "DELETE" });
+      this.showToast("Équipement supprimé avec succès.");
       this.loadAllData();
-    } else {
-      this.showToast("Erreur lors de la suppression.", "error");
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur lors de la suppression de l'équipement.", "error");
     }
   },
 
@@ -1450,39 +1874,40 @@ const App = {
       specialiteIds
     };
 
-    let res;
-    if (id) {
-      res = await this.fetchApi(`/api/techniciens/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-    } else {
-      res = await this.fetchApi("/api/techniciens", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-    }
+    try {
+      let res;
+      if (id) {
+        res = await this.fetchApi(`/api/techniciens/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        res = await this.fetchApi("/api/techniciens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      }
 
-    if (!res) {
-      this.showToast("Erreur lors de l'enregistrement du technicien.", "error");
-      return;
+      this.closeModal("modal-technicien");
+      this.showToast(`Technicien ${prenom} ${nom} enregistré !`);
+      this.loadAllData();
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur lors de l'enregistrement du technicien.", "error");
     }
-
-    this.closeModal("modal-technicien");
-    this.showToast(`Technicien ${prenom} ${nom} enregistré !`);
-    this.loadAllData();
   },
 
   async handleDeleteTechnicien(id) {
     if (!confirm("Voulez-vous vraiment supprimer ce technicien ?")) return;
-    const resp = await fetch(`/api/techniciens/${id}`, { method: "DELETE" });
-    if (resp.ok) {
-      this.showToast("Technicien supprimé.");
+    try {
+      await this.fetchApi(`/api/techniciens/${id}`, { method: "DELETE" });
+      this.showToast("Technicien supprimé avec succès.");
       this.loadAllData();
-    } else {
-      this.showToast("Erreur lors de la suppression.", "error");
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur lors de la suppression du technicien.", "error");
     }
   },
 
@@ -1668,20 +2093,20 @@ const App = {
       statut: "Planifiée"
     };
 
-    const result = await this.fetchApi("/api/visites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    try {
+      const result = await this.fetchApi("/api/visites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
-    if (!result) {
-      this.showToast("Erreur lors de la planification sur le serveur.", "error");
-      return;
+      this.closeModal("modal-visite");
+      this.showToast(`Nouvelle visite ${result?.reference || ''} planifiée avec succès !`);
+      this.loadAllData();
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur lors de la planification de la visite.", "error");
     }
-
-    this.closeModal("modal-visite");
-    this.showToast(`Nouvelle visite ${result.reference || ''} planifiée avec succès !`);
-    this.loadAllData();
   },
 
   /* ------------------------------------------------------------------------
@@ -1715,20 +2140,20 @@ const App = {
 
     const payload = { statut, dureeReelleMinutes, rapportTechnique, actionsCorrectives };
 
-    const res = await this.fetchApi(`/api/visites/${id}/statut`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    try {
+      await this.fetchApi(`/api/visites/${id}/statut`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
-    if (!res) {
-      this.showToast("Erreur lors de la validation du rapport.", "error");
-      return;
+      this.closeModal("modal-rapport");
+      this.showToast("Fiche de visite enregistrée et validée !");
+      this.loadAllData();
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur lors de la validation du rapport.", "error");
     }
-
-    this.closeModal("modal-rapport");
-    this.showToast("Fiche de visite enregistrée et validée !");
-    this.loadAllData();
   },
 
   populateActiveTechViewSelect() {
@@ -1893,20 +2318,20 @@ const App = {
       statut
     };
 
-    const result = await this.fetchApi("/api/marches", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    try {
+      const result = await this.fetchApi("/api/marches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
-    if (!result) {
-      this.showToast("Erreur lors de la création du marché.", "error");
-      return;
+      this.closeModal("modal-marche");
+      this.showToast(`Nouveau marché ${result?.codeMarche || ''} créé !`);
+      this.loadAllData();
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur lors de la création du marché.", "error");
     }
-
-    this.closeModal("modal-marche");
-    this.showToast(`Nouveau marché ${result.codeMarche || ''} créé !`);
-    this.loadAllData();
   },
 
   /* ── IMPORT EXCEL MARCHÉS ── */
