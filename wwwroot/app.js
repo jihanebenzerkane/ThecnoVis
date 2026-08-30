@@ -499,12 +499,14 @@ const App = {
         const errorMessage = errBody?.message || errBody?.error || `Erreur HTTP ${response.status}`;
 
         if (response.status === 401) {
-          this.setOnlineStatus(false);
-          console.warn(`[401 Non Authentifié] Session expirée ou non connectée (${endpoint})`);
-          if (this.state.user && !endpoint.includes("/api/auth/login") && !endpoint.includes("/api/auth/me")) {
-            this.state.user = null;
-            this.showAuthScreen();
-            this.showToast("Votre session a expiré. Veuillez vous reconnecter.", "error");
+          if (endpoint !== "/api/auth/me") {
+            this.setOnlineStatus(false);
+            console.warn(`[401 Non Authentifié] Session expirée ou non connectée (${endpoint})`);
+            if (this.state.user && !endpoint.includes("/api/auth/login")) {
+              this.state.user = null;
+              this.showAuthScreen();
+              this.showToast("Votre session a expiré. Veuillez vous reconnecter.", "error");
+            }
           }
           throw new Error(errorMessage || "Session expirée. Veuillez vous reconnecter.");
         }
@@ -544,7 +546,9 @@ const App = {
 
       return await response.text();
     } catch (error) {
-      console.warn(`Erreur API (${endpoint}):`, error.message || error);
+      if (endpoint !== "/api/auth/me") {
+        console.warn(`Erreur API (${endpoint}):`, error.message || error);
+      }
       throw error;
     }
   },
