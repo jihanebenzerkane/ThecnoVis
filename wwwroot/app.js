@@ -186,14 +186,14 @@ const App = {
         const res = await this.fetchApi("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: identifier, password })
+          body: JSON.stringify({ identifier, password })
         });
 
-        if (res && res.email) {
-          this.state.user = res;
+        if (res && res.user) {
+          this.state.user = res.user;
           this.updateUserProfileUI();
           this.showApp();
-          this.showToast(`Bienvenue, ${res.nomComplet || res.email} !`);
+          this.showToast(`Bienvenue, ${res.user.nomComplet || res.user.email} !`);
           await this.loadCompanySettings();
           await this.loadAllData();
         }
@@ -205,131 +205,19 @@ const App = {
       } finally {
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.innerHTML = `<span>Se connecter</span><span class="auth-btn-arrow">→</span>`;
+          submitBtn.innerHTML = `<span>Se connecter</span>`;
         }
       }
     });
 
-    // 2. Boutons de navigation Auth
-    document.getElementById("btn-goto-forgot")?.addEventListener("click", () => {
-      this.switchAuthView("forgot");
-    });
-    document.getElementById("btn-back-to-login")?.addEventListener("click", () => {
-      this.switchAuthView("login");
-    });
-    document.getElementById("btn-back-to-forgot")?.addEventListener("click", () => {
-      this.switchAuthView("forgot");
-    });
-
-    // 3. Soumission Mot de passe oublié (Email)
-    document.getElementById("form-auth-forgot")?.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const email = document.getElementById("forgot-email")?.value?.trim();
-      const alertDiv = document.getElementById("auth-forgot-alert");
-      const submitBtn = document.getElementById("btn-submit-forgot");
-
-      if (alertDiv) { alertDiv.style.display = "none"; alertDiv.textContent = ""; }
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = `<span>Vérification…</span>`; }
-
-      try {
-        const res = await this.fetchApi("/api/auth/forgot-password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email })
-        });
-
-        this.showToast(res.message || "Code de vérification envoyé !");
-        document.getElementById("reset-email").value = email;
-        const resetSub = document.getElementById("reset-view-subtitle");
-        if (resetSub) {
-          resetSub.textContent = `Un code de vérification à 6 chiffres a été envoyé à ${email}.`;
-        }
-        this.switchAuthView("reset");
-      } catch (err) {
-        if (alertDiv) {
-          alertDiv.className = "auth-alert auth-alert-danger";
-          alertDiv.textContent = err.message || "Aucun compte n'est associé à cette adresse e-mail.";
-          alertDiv.style.display = "block";
-        }
-      } finally {
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = `<span>Envoyer le code de vérification</span><span class="auth-btn-arrow">→</span>`;
-        }
-      }
-    });
-
-    // 4. Soumission Réinitialisation (Code + Nouveau mot de passe)
-    document.getElementById("form-auth-reset")?.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const email = document.getElementById("reset-email")?.value?.trim();
-      const code = document.getElementById("reset-code")?.value?.trim();
-      const newPassword = document.getElementById("reset-new-password")?.value;
-      const confirmPassword = document.getElementById("reset-confirm-password")?.value;
-      const alertDiv = document.getElementById("auth-reset-alert");
-      const submitBtn = document.getElementById("btn-submit-reset");
-
-      if (newPassword !== confirmPassword) {
-        if (alertDiv) {
-          alertDiv.className = "auth-alert auth-alert-danger";
-          alertDiv.textContent = "Les deux mots de passe ne correspondent pas.";
-          alertDiv.style.display = "block";
-        }
-        return;
-      }
-
-      if (newPassword.length < 8) {
-        if (alertDiv) {
-          alertDiv.className = "auth-alert auth-alert-danger";
-          alertDiv.textContent = "Le mot de passe doit comporter au moins 8 caractères.";
-          alertDiv.style.display = "block";
-        }
-        return;
-      }
-
-      if (alertDiv) { alertDiv.style.display = "none"; alertDiv.textContent = ""; }
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = `<span>Enregistrement…</span>`; }
-
-      try {
-        const res = await this.fetchApi("/api/auth/reset-password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, code, newPassword })
-        });
-
-        this.showToast(res.message || "Mot de passe réinitialisé avec succès !");
-        this.switchAuthView("login");
-        const loginInput = document.getElementById("login-identifier");
-        if (loginInput) loginInput.value = email;
-        const loginPwd = document.getElementById("login-password");
-        if (loginPwd) loginPwd.value = "";
-      } catch (err) {
-        if (alertDiv) {
-          alertDiv.className = "auth-alert auth-alert-danger";
-          alertDiv.textContent = err.message || "Code invalide ou expiré.";
-          alertDiv.style.display = "block";
-        }
-      } finally {
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = `<span>Enregistrer et se connecter</span><span class="auth-btn-arrow">✓</span>`;
-        }
-      }
-    });
-
-    // 5. Toggles de visibilité du mot de passe
+    // 2. Toggle visibilité du mot de passe
     document.getElementById("btn-toggle-login-pwd")?.addEventListener("click", () => {
       const input = document.getElementById("login-password");
       if (!input) return;
       input.type = input.type === "password" ? "text" : "password";
     });
-    document.getElementById("btn-toggle-reset-pwd")?.addEventListener("click", () => {
-      const input = document.getElementById("reset-new-password");
-      if (!input) return;
-      input.type = input.type === "password" ? "text" : "password";
-    });
 
-    // 6. Gestion du Profil & Déconnexion
+    // 3. Gestion du Profil & Déconnexion
     document.getElementById("user-profile-btn")?.addEventListener("click", () => {
       this.openModal("modal-user-profile");
     });
@@ -554,7 +442,7 @@ const App = {
       const tag = document.createElement("span");
       tag.className = "agence-tag";
       tag.innerHTML = `
-        <span>📍 ${a}</span>
+        <span>${a}</span>
         <span class="btn-remove-agence" onclick="App.removeAgence(${idx})" title="Supprimer">×</span>
       `;
       container.appendChild(tag);

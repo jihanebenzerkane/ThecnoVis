@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<Utilisateur> Utilisateurs => Set<Utilisateur>();
     public DbSet<ApplicationSetting> ApplicationSettings
         => Set<ApplicationSetting>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -66,6 +67,16 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Technicien>()
             .HasIndex(t => t.Matricule)
             .IsUnique();
+
+        modelBuilder.Entity<PasswordResetToken>()
+            .HasIndex(t => t.TokenHash)
+            .IsUnique();
+
+        modelBuilder.Entity<PasswordResetToken>()
+            .HasOne(t => t.Utilisateur)
+            .WithMany()
+            .HasForeignKey(t => t.UtilisateurId)
+            .OnDelete(DeleteBehavior.Cascade);
 
 
         // ====================================================
