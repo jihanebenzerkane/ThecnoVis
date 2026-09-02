@@ -267,107 +267,107 @@ namespace TechnoVIS.Controllers
             if (rows == null || !rows.Any())
                 return BadRequest(new { error = "Aucune donnée à importer." });
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync<IActionResult>(async () =>
             {
-                int imported = 0;
-                int updated = 0;
-
-                var allSpecs = await _context.Specialites.ToListAsync();
-                var specMap = allSpecs.ToDictionary(s => s.Nom.ToLower().Trim(), s => s);
-
-                foreach (var row in rows)
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    var matricule = row.Matricule?.Trim() ?? string.Empty;
-                    var nom = row.Nom?.Trim() ?? string.Empty;
-                    if (string.IsNullOrEmpty(matricule) && string.IsNullOrEmpty(nom)) continue;
+                    int imported = 0;
+                    int updated = 0;
 
-                    if (string.IsNullOrEmpty(matricule))
-                        matricule = $"TECH-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+                    var allSpecs = await _context.Specialites.ToListAsync();
+                    var specMap = allSpecs.ToDictionary(s => s.Nom.ToLower().Trim(), s => s);
 
-                    var tech = await _context.Techniciens
-                        .Include(t => t.Specialites)
-                        .FirstOrDefaultAsync(t => t.Matricule == matricule || (t.Nom == nom && t.Prenom == row.Prenom));
-
-                    bool isNew = tech == null;
-                    if (isNew)
+                    foreach (var row in rows)
                     {
-                        tech = new Technicien
+                        var matricule = row.Matricule?.Trim() ?? string.Empty;
+                        var nom = row.Nom?.Trim() ?? string.Empty;
+                        if (string.IsNullOrEmpty(matricule) && string.IsNullOrEmpty(nom)) continue;
+
+                        if (string.IsNullOrEmpty(matricule))
+                            matricule = $"TECH-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+
+                        var tech = await _context.Techniciens
+                            .Include(t => t.Specialites)
+                            .FirstOrDefaultAsync(t => t.Matricule == matricule || (t.Nom == nom && t.Prenom == row.Prenom));
+
+                        bool isNew = tech == null;
+                        if (isNew)
                         {
-                            Matricule = matricule,
-                            Nom = nom,
-                            Prenom = row.Prenom?.Trim() ?? string.Empty,
-                            Email = row.Email?.Trim() ?? string.Empty,
-                            Telephone = row.Telephone?.Trim() ?? string.Empty,
-                            Base = string.IsNullOrEmpty(row.Base) ? "Casablanca" : row.Base.Trim(),
-                            Statut = string.IsNullOrEmpty(row.Statut) ? "Actif" : row.Statut.Trim(),
-                            HeuresHebdo = row.HeuresHebdo > 0 ? row.HeuresHebdo : 40,
-                            Disponible = (row.Statut ?? "Actif").Equals("Actif", StringComparison.OrdinalIgnoreCase),
-                            DateEmbauche = DateTime.Today
-                        };
-                        _context.Techniciens.Add(tech);
-                        imported++;
-                    }
-                    else
-                    {
-                        tech!.Nom = nom;
-                        tech.Prenom = row.Prenom?.Trim() ?? tech.Prenom;
-                        tech.Email = row.Email?.Trim() ?? tech.Email;
-                        tech.Telephone = row.Telephone?.Trim() ?? tech.Telephone;
-                        tech.Base = string.IsNullOrEmpty(row.Base) ? tech.Base : row.Base.Trim();
-                        tech.Statut = string.IsNullOrEmpty(row.Statut) ? tech.Statut : row.Statut.Trim();
-                        tech.HeuresHebdo = row.HeuresHebdo > 0 ? row.HeuresHebdo : tech.HeuresHebdo;
-                        tech.Disponible = (row.Statut ?? tech.Statut).Equals("Actif", StringComparison.OrdinalIgnoreCase);
-                        updated++;
-                    }
-
-                    // Attacher les spécialités
-                    if (!string.IsNullOrWhiteSpace(row.Specialites))
-                    {
-                        var specNames = row.Specialites.Split(new[] { ',', ';', '/' }, StringSplitOptions.RemoveEmptyEntries);
-                        var targetSpecs = new List<Specialite>();
-
-                        foreach (var rawName in specNames)
+                            tech = new Technicien
+                            {
+                                Matricule = matricule,
+                                Nom = nom,
+                                Prenom = row.Prenom?.Trim() ?? string.Empty,
+                                Email = row.Email?.Trim() ?? $"{matricule.ToLower()}@technovis.ma",
+                                Telephone = row.Telephone?.Trim() ?? string.Empty,
+                                Base = row.Base?.Trim() ?? "Casablanca",
+                                Statut = row.Statut?.Trim() ?? "Actif",
+                                HeuresHebdo = row.HeuresHebdo > 0 ? row.HeuresHebdo : 40,
+                                Disponible = true,
+                                DateEmbauche = DateTime.Today
+                            };
+                            _context.Techniciens.Add(tech);
+                            imported++;
+                        }
+                        else
                         {
-                            var sName = rawName.Trim();
-                            if (string.IsNullOrEmpty(sName)) continue;
+                            tech!.Nom = string.IsNullOrEmpty(nom) ? tech.Nom : nom;
+                            tech.Prenom = string.IsNullOrEmpty(row.Prenom) ? tech.Prenom : row.Prenom.Trim();
+                            tech.Email = string.IsNullOrEmpty(row.Email) ? tech.Email : row.Email.Trim();
+                            tech.Telephone = string.IsNullOrEmpty(row.Telephone) ? tech.Telephone : row.Telephone.Trim();
+                            tech.Base = string.IsNullOrEmpty(row.Base) ? tech.Base : row.Base.Trim();
+                            tech.Statut = string.IsNullOrEmpty(row.Statut) ? tech.Statut : row.Statut.Trim();
+                            if (row.HeuresHebdo > 0) tech.HeuresHebdo = row.HeuresHebdo;
+                            updated++;
+                        }
 
-                            var key = sName.ToLower();
-                            if (!specMap.TryGetValue(key, out var existingSpec))
+                        // Attach specialities
+                        if (!string.IsNullOrWhiteSpace(row.Specialites))
+                        {
+                            var specNames = row.Specialites.Split(new[] { ',', ';', '/' }, StringSplitOptions.RemoveEmptyEntries);
+                            foreach (var name in specNames)
                             {
-                                existingSpec = new Specialite { Nom = sName, Description = $"Spécialité {sName}" };
-                                _context.Specialites.Add(existingSpec);
-                                specMap[key] = existingSpec;
-                            }
-                            if (!targetSpecs.Contains(existingSpec))
-                            {
-                                targetSpecs.Add(existingSpec);
+                                var clean = name.Trim().ToLower();
+                                if (specMap.TryGetValue(clean, out var specObj))
+                                {
+                                    if (!tech.Specialites.Any(s => s.Id == specObj.Id))
+                                        tech.Specialites.Add(specObj);
+                                }
+                                else
+                                {
+                                    var newSpec = new Specialite { Nom = name.Trim(), Description = "Ajouté via import Excel" };
+                                    _context.Specialites.Add(newSpec);
+                                    await _context.SaveChangesAsync();
+                                    specMap[clean] = newSpec;
+                                    tech.Specialites.Add(newSpec);
+                                }
                             }
                         }
 
-                        tech.Specialites = targetSpecs;
+                        await _context.SaveChangesAsync();
+
+                        // Création / synchronisation du compte utilisateur
+                        await EnsureTechnicienUserAccountAsync(tech);
                     }
 
-                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
 
-                    // Création / synchronisation du compte utilisateur
-                    await EnsureTechnicienUserAccountAsync(tech);
+                    return Ok(new
+                    {
+                        message = $"Importation réussie : {imported} technicien(s) créé(s), {updated} mis à jour.",
+                        imported,
+                        updated
+                    });
                 }
-
-                await transaction.CommitAsync();
-
-                return Ok(new
+                catch (Exception ex)
                 {
-                    message = $"Importation réussie : {imported} technicien(s) créé(s), {updated} mis à jour.",
-                    imported,
-                    updated
-                });
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return StatusCode(500, new { error = $"Échec de l'import des techniciens : {ex.Message}" });
-            }
+                    await transaction.RollbackAsync();
+                    return StatusCode(500, new { error = $"Échec de l'import des techniciens : {ex.Message}" });
+                }
+            });
         }
 
         private async Task EnsureTechnicienUserAccountAsync(Technicien tech)

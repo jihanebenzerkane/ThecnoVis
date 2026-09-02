@@ -632,6 +632,10 @@ const App = {
    * ------------------------------------------------------------------------ */
   setupEventListeners() {
     // Navigation onglets
+    // Déclencheurs Importation Globale Multi-Fichiers
+document.getElementById("btn-open-global-import")?.addEventListener("click", () => this.openSmartImportModal());
+document.getElementById("btn-analyze-smart-import")?.addEventListener("click", () => this.handleSmartImportAnalyze());
+document.getElementById("btn-confirm-smart-import")?.addEventListener("click", () => this.handleSmartImportConfirm());
     document.querySelectorAll(".sidebar-nav .nav-item").forEach(item => {
       item.addEventListener("click", (e) => {
         e.preventDefault();
@@ -1521,7 +1525,7 @@ const App = {
     formData.append("file", fileInput.files[0]);
 
     try {
-      const resp = await fetch("/api/equipements/import/preview", { method: "POST", body: formData });
+      const resp = await fetch("/api/equipements/import/preview", { method: "POST", body: formData, credentials: "include" });
       const result = await resp.json();
       if (!resp.ok) {
         const errDiv = document.getElementById("import-eq-error-msg");
@@ -1533,6 +1537,15 @@ const App = {
       }
 
       this._equipementsImportAllRows = result.allRows;
+
+      if (!result.rowCount || result.rowCount === 0) {
+        const errDiv = document.getElementById("import-eq-error-msg");
+        errDiv.textContent = "Aucune ligne detectee. Verifiez que votre fichier utilise les colonnes correctes (N° Serie, Nom Equipement, Categorie...). Telechargez le modele pour vous assurer du bon format.";
+        errDiv.style.display = "block";
+        btn.textContent = "Analyser le fichier";
+        btn.disabled = false;
+        return;
+      }
 
       document.getElementById("import-eq-summary").innerHTML = `
         <strong>${result.rowCount}</strong> équipement(s) détecté(s). Aperçu des premières lignes et contrôles de cohérence :
@@ -1579,6 +1592,7 @@ const App = {
       const resp = await fetch("/api/equipements/import/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(this._equipementsImportAllRows)
       });
       const result = await resp.json();
@@ -2253,7 +2267,7 @@ const App = {
     formData.append("file", fileInput.files[0]);
 
     try {
-      const resp = await fetch("/api/marches/import/preview", { method: "POST", body: formData });
+      const resp = await fetch("/api/marches/import/preview", { method: "POST", body: formData, credentials: "include" });
       const result = await resp.json();
       this._excelImportAllRows = result.allRows;
 
@@ -2296,6 +2310,7 @@ const App = {
       const resp = await fetch("/api/marches/import/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(this._excelImportAllRows)
       });
       const result = await resp.json();
@@ -2310,7 +2325,157 @@ const App = {
       this._excelImportAllRows = null;
     }
   },
+  /* ------------------------------------------------------------------------
+   * 9b. GLOBAL MULTI-FILE SMART IMPORT (AZURE AI + STANDARD FALLBACK)
+   * ------------------------------------------------------------------------ */
+  openSmartImportModal() {
+    const fileInput = document.getElementById("input-smart-import-files");
+    if (fileInput) fileInput.value = "";
+    this._smartImportBatchData = null;
+    this.showSmartImportStep(1);
+    this.openModal("modal-smart-import");
+  },
 
+  showSmartImportStep(step) {
+    const step1 = document.getElementById("smart-import-step-1");
+    const step2 = document.getElementById("smart-import-step-2");
+    if (step1) step1.style.display = step === 1 ? "block" : "none";
+    if (step2) step2.style.display = step === 2 ? "block" : "none";
+  },
+
+  async handleSmartImportAnalyze() {
+    const fileInput = document.getElementById("input-smart-import-files");
+    const files = fileInput ? fileInput.files : null;
+
+    if (!files || files.length === 0) {
+      this.showToast("Veuillez sélectionner au moins un fichier à analyser.", "error");
+      return;
+    }
+
+    const btn = document.getElementById("btn-analyze-smart-import");
+    if (btn) { 
+      btn.disabled = true; 
+      btn.textContent = "Analyse multi-fichiers en cours…"; 
+    }
+
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+
+    try {
+      const res = await fetch("/api/import-global/analyze", {
+        method: "POST",
+        body: formData,
+        credentials: "include"
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Erreur lors de l'analyse des fichiers.");
+
+      this._smartImportBatchData = json.data;
+      this.renderSmartImportPreview(json.data);
+      this.showSmartImportStep(2);
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur pendant l'analyse des fichiers.", "error");
+    } finally {
+      if (btn) { 
+        btn.disabled = false; 
+        btn.textContent = "Analyser les documents"; 
+      }
+    }
+  },
+
+  renderSmartImportPreview(batchResults) {
+    const container = document.getElementById("smart-import-preview-container");
+    const summary = document.getElementById("smart-import-summary");
+    if (!container) return;
+
+    container.innerHTML = "";
+    if (summary) {
+      summary.innerHTML = `<strong>${batchResults.length}</strong> fichier(s) analysé(s) avec succès. Vérifiez la catégorisation et les scores de confiance avant confirmation :`;
+    }
+
+    batchResults.forEach(res => {
+      const card = document.createElement("div");
+      card.style.cssText = "background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; margin-bottom:12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
+
+      const isAi = res.engineUsed && res.engineUsed.toLowerCase().includes("azure");
+      const badgeEngine = isAi 
+        ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:600;">🤖 Azure AI</span>`
+        : `<span class="badge" style="background:#f1f5f9; color:#475569; font-weight:600;">⚡ Standard C#</span>`;
+
+      const confPct = Math.round((res.confidenceScore || 1.0) * 100);
+      const badgeConf = confPct >= 85 
+        ? `<span class="badge badge-validee">Confiance ${confPct}%</span>`
+        : (confPct >= 60 
+          ? `<span class="badge badge-planifiee">Confiance ${confPct}%</span>` 
+          : `<span class="badge badge-retard">Confiance ${confPct}%</span>`);
+
+      const catBadge = `<span class="spec-badge" style="margin-left:8px;">${res.category || 'Équipement'}</span>`;
+
+      card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div>
+            <strong style="font-size:0.95rem;">📄 ${res.fileName}</strong> ${catBadge}
+          </div>
+          <div style="display:flex; gap:8px;">
+            ${badgeEngine}
+            ${badgeConf}
+          </div>
+        </div>
+        <div style="font-size:0.85rem; color:var(--text-secondary); display:flex; justify-content:space-between; align-items:center;">
+          <span>Contenu extrait : <strong>${res.equipements ? res.equipements.length : 0}</strong> équipement(s), <strong>${res.marches ? res.marches.length : 0}</strong> marché(s).</span>
+          <span style="font-size:0.78rem; color:var(--text-muted);">${res.errorMessage || '✓ Aucune erreur'}</span>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  },
+
+  async handleSmartImportConfirm() {
+    if (!this._smartImportBatchData || this._smartImportBatchData.length === 0) return;
+
+    const btn = document.getElementById("btn-confirm-smart-import");
+    if (btn) { 
+      btn.disabled = true; 
+      btn.textContent = "Enregistrement dans SQL Server…"; 
+    }
+
+    // Regrouper l'ensemble des lignes d'équipements extraites pour confirmation
+    const allRows = [];
+    this._smartImportBatchData.forEach(item => {
+      if (item.equipements && item.equipements.length > 0) {
+        allRows.push(...item.equipements);
+      }
+    });
+
+    try {
+      const res = await fetch("/api/import-global/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ rows: allRows })
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Erreur lors de l'enregistrement en base.");
+
+      this.closeModal("modal-smart-import");
+      this.showToast("Importation terminée ! Toutes les données ont été enregistrées dans SQL Server.");
+      this.loadAllData();
+    } catch (err) {
+      console.error(err);
+      this.showToast(err.message || "Erreur lors de la confirmation de l'import.", "error");
+    } finally {
+      if (btn) { 
+        btn.disabled = false; 
+        btn.textContent = "Valider et Enregistrer en Base"; 
+      }
+      this._smartImportBatchData = null;
+    }
+  },
   /* ------------------------------------------------------------------------
    * 10. CENTRE D'EXPORTATION (PDF / EXCEL / CSV)
    * ------------------------------------------------------------------------ */

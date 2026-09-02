@@ -83,8 +83,29 @@ public class AuthController : ControllerBase
         }
 
         var passwordHasher = new PasswordHasher<Utilisateur>();
-        var verificationResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, model.Password);
+PasswordVerificationResult verificationResult;
 
+try
+{
+    verificationResult = passwordHasher.VerifyHashedPassword(
+        user,
+        user.PasswordHash,
+        model.Password
+    );
+}
+catch (Exception ex)
+{
+    _logger.LogError(
+        ex,
+        "Hash de mot de passe invalide pour l'utilisateur {Email}.",
+        user.Email
+    );
+
+    return Unauthorized(new
+    {
+        message = "Identifiant ou mot de passe incorrect."
+    });
+}
         if (verificationResult == PasswordVerificationResult.Failed)
         {
             _logger.LogWarning("Tentative de connexion échouée : mot de passe invalide pour {Identifier}.", identifier);

@@ -2,11 +2,15 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Azure;
+using Azure.AI.DocumentIntelligence;
 using TechnoVIS.Data;
 using TechnoVIS.Models;
 using TechnoVIS.Services;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -20,12 +24,14 @@ namespace TechnoVIS.Controllers
         private readonly AppDbContext _context;
         private readonly ScoringService _scoringService;
         private readonly ExcelImportService _excelService;
+        private readonly IConfiguration _configuration;
 
-        public EquipementsController(AppDbContext context, ScoringService scoringService, ExcelImportService excelService)
+        public EquipementsController(AppDbContext context, ScoringService scoringService, ExcelImportService excelService, IConfiguration configuration)
         {
             _context = context;
             _scoringService = scoringService;
             _excelService = excelService;
+            _configuration = configuration;
         }
 
         [HttpGet]
@@ -164,6 +170,52 @@ namespace TechnoVIS.Controllers
 
         // ── EXCEL IMPORT ÉQUIPEMENTS ────────────────────────────────────────
 
+        [HttpGet("import/template")]
+        public IActionResult DownloadTemplate()
+        {
+            using var wb = new ClosedXML.Excel.XLWorkbook();
+            var ws = wb.Worksheets.Add("Equipements");
+
+            // Header row
+            var headers = new[]
+            {
+                "N° Série", "Nom Equipement", "Catégorie", "Client",
+                "Site", "Criticité", "Score Santé", "Date Installation", "Statut"
+            };
+            for (int i = 0; i < headers.Length; i++)
+            {
+                var cell = ws.Cell(1, i + 1);
+                cell.Value = headers[i];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromHtml("#0d9488");
+                cell.Style.Font.FontColor = ClosedXML.Excel.XLColor.White;
+                cell.Style.Alignment.Horizontal = ClosedXML.Excel.XLAlignmentHorizontalValues.Center;
+            }
+
+            // Sample data row
+            ws.Cell(2, 1).Value = "EQ-0001";
+            ws.Cell(2, 2).Value = "Serveur Dell PowerEdge";
+            ws.Cell(2, 3).Value = "Informatique";
+            ws.Cell(2, 4).Value = "Maroc Telecom";
+            ws.Cell(2, 5).Value = "Casablanca";
+            ws.Cell(2, 6).Value = 3;
+            ws.Cell(2, 7).Value = 85;
+            ws.Cell(2, 8).Value = "01/01/2024";
+            ws.Cell(2, 9).Value = "Opérationnel";
+
+            ws.Columns().AdjustToContents();
+
+            using var stream = new System.IO.MemoryStream();
+            wb.SaveAs(stream);
+            stream.Seek(0, System.IO.SeekOrigin.Begin);
+
+            return File(
+                stream.ToArray(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "template_equipements.xlsx"
+            );
+        }
+
         [HttpPost("import/preview")]
         [RequestSizeLimit(10 * 1024 * 1024)]
         public async Task<IActionResult> ImportPreview(IFormFile file)
@@ -171,13 +223,24 @@ namespace TechnoVIS.Controllers
             if (file == null || file.Length == 0)
                 return BadRequest(new { error = "Aucun fichier fourni." });
 
-            if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                return BadRequest(new { error = "Le fichier doit être au format .xlsx." });
+            bool useAi = _configuration.GetValue<bool>("Features:UseAiImport");
 
             try
             {
-                using var stream = file.OpenReadStream();
-                var rows = _excelService.ParseEquipementsExcel(stream);
+                List<EquipementImportRow> rows;
+
+                if (!useAi)
+                {
+                    if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                        return BadRequest(new { error = "Le fichier doit être au format .xlsx." });
+
+                    using var stream = file.OpenReadStream();
+                    rows = _excelService.ParseEquipementsExcel(stream);
+                }
+                else
+                {
+                    rows = await ExtractEquipementsWithAzureAiAsync(file);
+                }
 
                 // Load all existing clients, sites and equipments for validation
                 var existingClients = await _context.Clients.Include(c => c.Sites).ToListAsync();
@@ -230,6 +293,7 @@ namespace TechnoVIS.Controllers
 
                 return Ok(new
                 {
+                    useAi,
                     rowCount = rows.Count,
                     preview = rows.Take(5).Select(r => new
                     {
@@ -251,6 +315,93 @@ namespace TechnoVIS.Controllers
             {
                 return BadRequest(new { error = $"Erreur lors de la lecture du fichier : {ex.Message}" });
             }
+        }
+
+        private async Task<List<EquipementImportRow>> ExtractEquipementsWithAzureAiAsync(IFormFile file)
+        {
+            var endpointStr = _configuration["AzureAI:Endpoint"];
+            var apiKey = _configuration["AzureAI:ApiKey"];
+            var modelId = _configuration["AzureAI:ModelId"] ?? "modele-ecs-v1";
+
+            if (string.IsNullOrWhiteSpace(endpointStr) || string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new InvalidOperationException("La configuration Azure AI (Endpoint ou ApiKey) est manquante dans appsettings.json.");
+            }
+
+            var client = new DocumentIntelligenceClient(new Uri(endpointStr), new AzureKeyCredential(apiKey));
+
+            using var stream = file.OpenReadStream();
+            var content = BinaryData.FromStream(stream);
+
+            var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, modelId, content);
+            AnalyzeResult analyzeResult = operation.Value;
+
+            var rows = new List<EquipementImportRow>();
+            int rowIndex = 1;
+
+            if (analyzeResult.Documents != null)
+            {
+                foreach (var document in analyzeResult.Documents)
+                {
+                    var row = new EquipementImportRow
+                    {
+                        RowIndex = rowIndex++,
+                        Criticite = 3,
+                        ScoreSante = 85,
+                        Statut = "Opérationnel",
+                        DateInstallation = DateTime.UtcNow
+                    };
+
+                    string nomEquipement = string.Empty;
+                    string numeroSerie = string.Empty;
+                    string marque = string.Empty;
+                    DateTime? dateAchat = null;
+
+                    if (document.Fields != null)
+                    {
+                        if (document.Fields.TryGetValue("Nom_Equipement", out var nomField) && nomField != null)
+                        {
+                            nomEquipement = nomField.ValueString ?? nomField.Content ?? string.Empty;
+                        }
+
+                        if (document.Fields.TryGetValue("Numero_Serie", out var serialField) && serialField != null)
+                        {
+                            numeroSerie = serialField.ValueString ?? serialField.Content ?? string.Empty;
+                        }
+
+                        if (document.Fields.TryGetValue("Marque", out var marqueField) && marqueField != null)
+                        {
+                            marque = marqueField.ValueString ?? marqueField.Content ?? string.Empty;
+                        }
+
+                        if (document.Fields.TryGetValue("Date_Achat", out var dateField) && dateField != null)
+                        {
+                            if (dateField.ValueDate.HasValue)
+                            {
+                                dateAchat = dateField.ValueDate.Value.DateTime;
+                            }
+                            else if (!string.IsNullOrWhiteSpace(dateField.Content) && DateTime.TryParse(dateField.Content, out var parsedDate))
+                            {
+                                dateAchat = parsedDate;
+                            }
+                        }
+                    }
+
+                    row.SerialNumber = !string.IsNullOrWhiteSpace(numeroSerie) ? numeroSerie.Trim() : $"EQ-AI-{rowIndex:D4}";
+                    row.Nom = !string.IsNullOrWhiteSpace(marque) && !string.IsNullOrWhiteSpace(nomEquipement)
+                        ? $"{marque.Trim()} {nomEquipement.Trim()}"
+                        : (!string.IsNullOrWhiteSpace(nomEquipement) ? nomEquipement.Trim() : (!string.IsNullOrWhiteSpace(marque) ? marque.Trim() : "Équipement Extrait AI"));
+                    row.Categorie = !string.IsNullOrWhiteSpace(marque) ? marque.Trim() : "Matériel";
+                    if (dateAchat.HasValue)
+                    {
+                        row.DateInstallation = dateAchat.Value;
+                    }
+
+                    rows.Add(row);
+                }
+            }
+
+            return rows;
         }
 
         [HttpPost("import/confirm")]

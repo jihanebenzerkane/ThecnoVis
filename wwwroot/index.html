@@ -1004,10 +1004,17 @@
 
     <div id="import-eq-step-1">
       <div class="form-group">
-        <label for="input-excel-equipements">Fichier Excel (.xlsx)</label>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <label for="input-excel-equipements" style="margin:0;">Fichier Excel (.xlsx)</label>
+          <a href="/api/equipements/import/template" download="template_equipements.xlsx"
+             style="font-size:0.82rem; color:var(--primary); text-decoration:none; border:1px solid var(--primary); border-radius:var(--r-sm); padding:3px 10px; transition:all 0.2s;"
+             onmouseover="this.style.background='var(--primary)';this.style.color='#fff';"
+             onmouseout="this.style.background='';this.style.color='var(--primary)';"
+          >Telecharger le modele</a>
+        </div>
         <input type="file" class="form-control" id="input-excel-equipements" accept=".xlsx">
         <small style="color: var(--text-muted); margin-top: 6px; display:block;">
-          Colonnes attendues : <code>SerialNumber</code>, <code>Nom</code>, <code>Categorie</code>, <code>Client</code>, <code>Site</code>, <code>Criticite</code>, <code>DateInstallation</code>, <code>Statut</code>
+          Colonnes requises : <code>N° Série</code>, <code>Nom Equipement</code>, <code>Catégorie</code>, <code>Client</code>, <code>Site</code>, <code>Criticité</code>, <code>Score Santé</code>, <code>Date Installation</code>, <code>Statut</code>
         </small>
       </div>
       <div id="import-eq-error-msg" style="color:#e05a5a; margin-top:8px; display:none; padding:10px; background:rgba(224,90,90,0.1); border-radius:var(--r-sm);"></div>

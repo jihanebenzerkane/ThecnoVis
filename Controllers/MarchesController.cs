@@ -147,204 +147,209 @@ namespace TechnoVIS.Controllers
             if (rows == null || rows.Count == 0)
                 return BadRequest(new { error = "Aucune ligne à importer." });
 
-            int imported = 0;
-            int updated = 0;
-            int skipped = 0;
-            var errors = new List<string>();
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-
-            try
+            return await strategy.ExecuteAsync<IActionResult>(async () =>
             {
-                // Pre-load all existing clients, sites, and marches
-                var existingClients = await _context.Clients.Include(c => c.Sites).ToListAsync();
-                var existingMarches = await _context.Marches.ToListAsync();
-                var allSites = await _context.Sites.ToListAsync();
+                int imported = 0;
+                int updated = 0;
+                int skipped = 0;
+                var errors = new List<string>();
 
-                int clientSeq = existingClients.Count;
-                int siteSeq = allSites.Count;
-                int marcheSeq = existingMarches.Count;
+                await using var transaction = await _context.Database.BeginTransactionAsync();
 
-                foreach (var row in rows)
+                try
                 {
-                    if (string.IsNullOrWhiteSpace(row.ClientNom) && string.IsNullOrWhiteSpace(row.Reference))
+                    // Pre-load all existing clients, sites, and marches
+                    var existingClients = await _context.Clients.Include(c => c.Sites).ToListAsync();
+                    var existingMarches = await _context.Marches.ToListAsync();
+                    var allSites = await _context.Sites.ToListAsync();
+
+                    int clientSeq = existingClients.Count;
+                    int siteSeq = allSites.Count;
+                    int marcheSeq = existingMarches.Count;
+
+                    foreach (var row in rows)
                     {
-                        skipped++;
-                        continue;
-                    }
-
-                    // ── 1. Resolve or create Client ────────────────────────
-                    var clientNom = string.IsNullOrWhiteSpace(row.ClientNom) ? "Client Inconnu" : row.ClientNom.Trim();
-                    var client = existingClients
-                        .FirstOrDefault(c => string.Equals(c.NomSociete, clientNom, StringComparison.OrdinalIgnoreCase));
-
-                    if (client == null)
-                    {
-                        clientSeq++;
-                        var clientCodePrefix = clientNom.Length >= 3 
-                            ? new string(clientNom.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper() 
-                            : "CLI";
-
-                        client = new Client
+                        if (string.IsNullOrWhiteSpace(row.ClientNom) && string.IsNullOrWhiteSpace(row.Reference))
                         {
-                            NomSociete = clientNom,
-                            CodeClient = $"CL-{clientCodePrefix}-{clientSeq:D4}",
-                            ContactPrincipal = string.Empty,
-                            Email = string.Empty,
-                            Telephone = string.Empty,
-                            Adresse = string.Empty
-                        };
-                        _context.Clients.Add(client);
-                        await _context.SaveChangesAsync(); // generate Client Id
-                        existingClients.Add(client);
-                    }
-
-                    // ── 2. Calculate Statut from DateFin vs today ──────────
-                    var statut = row.DateFin.Date >= DateTime.Today ? "Actif" : "Expiré";
-                    
-                    string refCode;
-                    if (!string.IsNullOrWhiteSpace(row.Reference))
-                    {
-                        refCode = row.Reference.Trim();
-                    }
-                    else
-                    {
-                        marcheSeq++;
-                        refCode = $"MAR-{DateTime.Now.Year}-{marcheSeq:D4}";
-                    }
-
-                    // ── 3. Resolve or update Marche ────────────────────────
-                    var existingMarche = existingMarches
-                        .FirstOrDefault(m => string.Equals(m.CodeMarche, refCode, StringComparison.OrdinalIgnoreCase));
-
-                    Marche marche;
-                    if (existingMarche != null)
-                    {
-                        // Update existing
-                        marche = existingMarche;
-                        marche.ClientId = client.Id;
-                        marche.Libelle = refCode;
-                        marche.DateDebut = row.DateDebut;
-                        marche.DateFin = row.DateFin;
-                        marche.TypeContrat = row.TypeContrat;
-                        marche.VisitesAnnuellesPrevues = row.VisitesAnnuellesPrevues;
-                        marche.VisitesRealisees = row.VisitesRealisees;
-                        marche.Statut = statut;
-                        marche.PvRequis = row.PvRequis;
-                        marche.FactureRequise = row.FactureRequise;
-                        marche.NombrePC = row.NombrePC;
-                        marche.NombrePCPortable = row.NombrePCPortable;
-                        marche.NombreImprimante = row.NombreImprimante;
-                        marche.NombreServeur = row.NombreServeur;
-                        marche.EquipementsDivers = row.EquipementsDivers;
-                        marche.CommentaireImport = row.CommentaireImport;
-                        updated++;
-                    }
-                    else
-                    {
-                        marche = new Marche
-                        {
-                            CodeMarche = refCode,
-                            Libelle = refCode,
-                            ClientId = client.Id,
-                            DateDebut = row.DateDebut,
-                            DateFin = row.DateFin,
-                            TypeContrat = row.TypeContrat,
-                            VisitesAnnuellesPrevues = row.VisitesAnnuellesPrevues,
-                            VisitesRealisees = row.VisitesRealisees,
-                            Statut = statut,
-                            PvRequis = row.PvRequis,
-                            FactureRequise = row.FactureRequise,
-                            NombrePC = row.NombrePC,
-                            NombrePCPortable = row.NombrePCPortable,
-                            NombreImprimante = row.NombreImprimante,
-                            NombreServeur = row.NombreServeur,
-                            EquipementsDivers = row.EquipementsDivers,
-                            CommentaireImport = row.CommentaireImport,
-                            SlaHeures = 24
-                        };
-                        _context.Marches.Add(marche);
-                        existingMarches.Add(marche);
-                        imported++;
-                    }
-
-                    // ── 4. Create Site record if Sites is specified ────────
-                    Site? primarySite = null;
-                    if (!string.IsNullOrWhiteSpace(row.Sites))
-                    {
-                        var cities = row.Sites.Split(',', StringSplitOptions.RemoveEmptyEntries);
-                        foreach (var city in cities)
-                        {
-                            var normalized = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(city.Trim().ToLower());
-                            var existingSite = allSites
-                                .FirstOrDefault(s => s.ClientId == client.Id && s.Ville == normalized);
-                            if (existingSite == null)
-                            {
-                                siteSeq++;
-                                var cleanCity = new string(normalized.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper();
-                                var siteCodePrefix = cleanCity.Length > 0 ? cleanCity : "ST";
-                                existingSite = new Site
-                                {
-                                    NomSite = $"Site {normalized}",
-                                    CodeSite = $"ST-{siteCodePrefix}-{siteSeq:D4}",
-                                    ClientId = client.Id,
-                                    Ville = normalized,
-                                    Adresse = string.Empty,
-                                    CodePostal = string.Empty
-                                };
-                                _context.Sites.Add(existingSite);
-                                await _context.SaveChangesAsync();
-                                allSites.Add(existingSite);
-                            }
-                            primarySite ??= existingSite;
+                            skipped++;
+                            continue;
                         }
-                    }
 
-                    // ── 5. Generate Equipment entries if specified ─────────
-                    if (primarySite != null)
-                    {
-                        void AddEquipIfAbsent(string nom, string categorie, int count)
+                        // ── 1. Resolve or create Client ────────────────────────
+                        var clientNom = string.IsNullOrWhiteSpace(row.ClientNom) ? "Client Inconnu" : row.ClientNom.Trim();
+                        var client = existingClients
+                            .FirstOrDefault(c => string.Equals(c.NomSociete, clientNom, StringComparison.OrdinalIgnoreCase));
+
+                        if (client == null)
                         {
-                            if (count <= 0) return;
-                            var catCode = new string(categorie.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper();
-                            var serial = $"EQ-{catCode}-{client.Id}-{primarySite.Id}";
-                            var exists = _context.Equipements.Any(e => e.SiteId == primarySite.Id && e.SerialNumber == serial);
-                            if (!exists)
+                            clientSeq++;
+                            var clientCodePrefix = clientNom.Length >= 3 
+                                ? new string(clientNom.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper() 
+                                : "CLI";
+
+                            client = new Client
                             {
-                                _context.Equipements.Add(new Equipement
+                                NomSociete = clientNom,
+                                CodeClient = $"CL-{clientCodePrefix}-{clientSeq:D4}",
+                                ContactPrincipal = string.Empty,
+                                Email = string.Empty,
+                                Telephone = string.Empty,
+                                Adresse = string.Empty
+                            };
+                            _context.Clients.Add(client);
+                            await _context.SaveChangesAsync(); // generate Client Id
+                            existingClients.Add(client);
+                        }
+
+                        // ── 2. Calculate Statut from DateFin vs today ──────────
+                        var statut = row.DateFin.Date >= DateTime.Today ? "Actif" : "Expiré";
+                        
+                        string refCode;
+                        if (!string.IsNullOrWhiteSpace(row.Reference))
+                        {
+                            refCode = row.Reference.Trim();
+                        }
+                        else
+                        {
+                            marcheSeq++;
+                            refCode = $"MAR-{DateTime.Now.Year}-{marcheSeq:D4}";
+                        }
+
+                        // ── 3. Resolve or update Marche ────────────────────────
+                        var existingMarche = existingMarches
+                            .FirstOrDefault(m => string.Equals(m.CodeMarche, refCode, StringComparison.OrdinalIgnoreCase));
+
+                        Marche marche;
+                        if (existingMarche != null)
+                        {
+                            // Update existing
+                            marche = existingMarche;
+                            marche.ClientId = client.Id;
+                            marche.Libelle = refCode;
+                            marche.DateDebut = row.DateDebut;
+                            marche.DateFin = row.DateFin;
+                            marche.TypeContrat = row.TypeContrat;
+                            marche.VisitesAnnuellesPrevues = row.VisitesAnnuellesPrevues;
+                            marche.VisitesRealisees = row.VisitesRealisees;
+                            marche.Statut = statut;
+                            marche.PvRequis = row.PvRequis;
+                            marche.FactureRequise = row.FactureRequise;
+                            marche.NombrePC = row.NombrePC;
+                            marche.NombrePCPortable = row.NombrePCPortable;
+                            marche.NombreImprimante = row.NombreImprimante;
+                            marche.NombreServeur = row.NombreServeur;
+                            marche.EquipementsDivers = row.EquipementsDivers;
+                            marche.CommentaireImport = row.CommentaireImport;
+                            updated++;
+                        }
+                        else
+                        {
+                            marche = new Marche
+                            {
+                                CodeMarche = refCode,
+                                Libelle = refCode,
+                                ClientId = client.Id,
+                                DateDebut = row.DateDebut,
+                                DateFin = row.DateFin,
+                                TypeContrat = row.TypeContrat,
+                                VisitesAnnuellesPrevues = row.VisitesAnnuellesPrevues,
+                                VisitesRealisees = row.VisitesRealisees,
+                                Statut = statut,
+                                PvRequis = row.PvRequis,
+                                FactureRequise = row.FactureRequise,
+                                NombrePC = row.NombrePC,
+                                NombrePCPortable = row.NombrePCPortable,
+                                NombreImprimante = row.NombreImprimante,
+                                NombreServeur = row.NombreServeur,
+                                EquipementsDivers = row.EquipementsDivers,
+                                CommentaireImport = row.CommentaireImport,
+                                SlaHeures = 24
+                            };
+                            _context.Marches.Add(marche);
+                            existingMarches.Add(marche);
+                            imported++;
+                        }
+
+                        // ── 4. Create Site record if Sites is specified ────────
+                        Site? primarySite = null;
+                        if (!string.IsNullOrWhiteSpace(row.Sites))
+                        {
+                            var cities = row.Sites.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                            foreach (var city in cities)
+                            {
+                                var normalized = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(city.Trim().ToLower());
+                                var existingSite = allSites
+                                    .FirstOrDefault(s => s.ClientId == client.Id && s.Ville == normalized);
+                                if (existingSite == null)
                                 {
-                                    SerialNumber = serial,
-                                    Nom = $"{nom} ({count} unités)",
-                                    Categorie = categorie,
-                                    SiteId = primarySite.Id,
-                                    DateInstallation = row.DateDebut,
-                                    Criticite = 3,
-                                    ScoreSante = 85,
-                                    ScoreRisque = 25,
-                                    Statut = "Opérationnel",
-                                    DerniereVisite = row.DateDebut,
-                                    ProchaineVisitePrevue = row.DateDebut.AddMonths(3)
-                                });
+                                    siteSeq++;
+                                    var cleanCity = new string(normalized.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper();
+                                    var siteCodePrefix = cleanCity.Length > 0 ? cleanCity : "ST";
+                                    existingSite = new Site
+                                    {
+                                        NomSite = $"Site {normalized}",
+                                        CodeSite = $"ST-{siteCodePrefix}-{siteSeq:D4}",
+                                        ClientId = client.Id,
+                                        Ville = normalized,
+                                        Adresse = string.Empty,
+                                        CodePostal = string.Empty
+                                    };
+                                    _context.Sites.Add(existingSite);
+                                    await _context.SaveChangesAsync();
+                                    allSites.Add(existingSite);
+                                }
+                                primarySite ??= existingSite;
                             }
                         }
 
-                        AddEquipIfAbsent("Parc PC Fixes", "Poste Fixe", row.NombrePC);
-                        AddEquipIfAbsent("Parc PC Portables", "Portable", row.NombrePCPortable);
-                        AddEquipIfAbsent("Parc Imprimantes", "Imprimante", row.NombreImprimante);
-                        AddEquipIfAbsent("Parc Serveurs", "Serveur", row.NombreServeur);
+                        // ── 5. Generate Equipment entries if specified ─────────
+                        if (primarySite != null)
+                        {
+                            void AddEquipIfAbsent(string nom, string categorie, int count)
+                            {
+                                if (count <= 0) return;
+                                var catCode = new string(categorie.Where(char.IsLetterOrDigit).Take(3).ToArray()).ToUpper();
+                                var serial = $"EQ-{catCode}-{client.Id}-{primarySite.Id}";
+                                var exists = _context.Equipements.Any(e => e.SiteId == primarySite.Id && e.SerialNumber == serial);
+                                if (!exists)
+                                {
+                                    _context.Equipements.Add(new Equipement
+                                    {
+                                        SerialNumber = serial,
+                                        Nom = $"{nom} ({count} unités)",
+                                        Categorie = categorie,
+                                        SiteId = primarySite.Id,
+                                        DateInstallation = row.DateDebut,
+                                        Criticite = 3,
+                                        ScoreSante = 85,
+                                        ScoreRisque = 25,
+                                        Statut = "Opérationnel",
+                                        DerniereVisite = row.DateDebut,
+                                        ProchaineVisitePrevue = row.DateDebut.AddMonths(3)
+                                    });
+                                }
+                            }
+
+                            AddEquipIfAbsent("Parc PC Fixes", "Poste Fixe", row.NombrePC);
+                            AddEquipIfAbsent("Parc PC Portables", "Portable", row.NombrePCPortable);
+                            AddEquipIfAbsent("Parc Imprimantes", "Imprimante", row.NombreImprimante);
+                            AddEquipIfAbsent("Parc Serveurs", "Serveur", row.NombreServeur);
+                        }
                     }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return Ok(new { imported, updated, skipped, errors });
                 }
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return Ok(new { imported, updated, skipped, errors });
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return StatusCode(500, new { error = $"Échec de la transaction d'import : {ex.Message}" });
-            }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    return StatusCode(500, new { error = $"Échec de la transaction d'import : {ex.Message}" });
+                }
+            });
         }
 
         [HttpGet("export")]

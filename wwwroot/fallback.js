@@ -1,10 +1,3 @@
-/**
- * TechnoVIS - Isolated Offline Fallback Module
- * ============================================
- * Ce module contient des données de secours utilisées UNIQUEMENT si l'API backend REST
- * (/api/visites, /api/equipements, etc.) est temporairement injoignable.
- * Il permet d'assurer la résilience de l'interface graphique.
- */
 
 window.TechnoVisFallback = {
   isOfflineMode: false,

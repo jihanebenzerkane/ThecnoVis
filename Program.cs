@@ -8,16 +8,12 @@ using TechnoVIS.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ============================================================
-// QuestPDF
-// ============================================================
+
 
 QuestPDF.Settings.License = LicenseType.Community;
 
-
-// ============================================================
 // MVC / API
-// ============================================================
+
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -27,27 +23,20 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddOpenApi();
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IEmailService, EmailService>();
 
-
-// ============================================================
 // Application Services
-// ============================================================
 
 builder.Services.AddScoped<ScoringService>();
 builder.Services.AddScoped<ExcelImportService>();
+builder.Services.AddScoped<SmartExcelImportService>();
 builder.Services.AddScoped<PdfExportService>();
 builder.Services.AddScoped<CsvExportService>();
 
 
-// ============================================================
 // Authentication - Cookie Authentication
-// ============================================================
-//
-// No JWT.
-// The browser receives an authentication cookie after login.
 // ASP.NET Core uses this cookie for subsequent requests.
-// ============================================================
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -84,20 +73,15 @@ builder.Services
     });
 
 
-// ============================================================
 // Authorization
-// ============================================================
 
 builder.Services.AddAuthorization();
 
 
-// ============================================================
 // Rate Limiting
-// ============================================================
 //
 // Protects sensitive endpoints such as login from brute-force
 // attempts.
-// ============================================================
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -114,16 +98,13 @@ builder.Services.AddRateLimiter(options =>
 });
 
 
-// ============================================================
 // CORS
-// ============================================================
 //
 // Only needed during local development if frontend/backend
 // are accessed from different origins.
 //
 // In production, the frontend is served by the same ASP.NET Core
 // application, so CORS is normally not required.
-// ============================================================
 
 builder.Services.AddCors(options =>
 {
@@ -142,9 +123,7 @@ builder.Services.AddCors(options =>
 });
 
 
-// ============================================================
 // Database - SQL Server + Entity Framework Core
-// ============================================================
 
 var connectionString =
     builder.Configuration.GetConnectionString("DefaultConnection")
@@ -175,9 +154,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 var app = builder.Build();
 
 
-// ============================================================
 // Database initialization
-// ============================================================
 
 using (var scope = app.Services.CreateScope())
 {
@@ -283,25 +260,6 @@ using (var scope = app.Services.CreateScope())
         dbContext.SaveChanges();
     }
 
-
-    // --------------------------------------------------------
-    // Default administrator
-    // --------------------------------------------------------
-    //
-    // IMPORTANT:
-    // There is NO hardcoded production password.
-    //
-    // Configure:
-    //
-    // Admin:Email
-    // Admin:DefaultPassword
-    //
-    // or environment variables:
-    //
-    // ADMIN_EMAIL
-    // ADMIN_DEFAULT_PASSWORD
-    // --------------------------------------------------------
-
     if (!dbContext.Utilisateurs.Any())
     {
         var adminEmail =
@@ -342,81 +300,10 @@ using (var scope = app.Services.CreateScope())
     }
 
 
-    // --------------------------------------------------------
-    // Development demo account
-    // --------------------------------------------------------
-
-    if (app.Environment.IsDevelopment())
-    {
-        const string demoMatricule = "MAT-1001";
-
-        var demoTechnicien =
-            dbContext.Techniciens
-                .FirstOrDefault(t => t.Matricule == demoMatricule);
-
-        if (demoTechnicien == null)
-        {
-            demoTechnicien = new Technicien
-            {
-                Matricule = demoMatricule,
-                Prenom = "Karim",
-                Nom = "Alami",
-                Email = "karim.alami@ecs.ma",
-                Telephone = "",
-                Base = "Casablanca",
-                Statut = "Actif",
-                Disponible = true,
-                HeuresHebdo = 40
-            };
-
-            dbContext.Techniciens.Add(demoTechnicien);
-            dbContext.SaveChanges();
-        }
-
-
-        var demoAccount =
-            dbContext.Utilisateurs
-                .FirstOrDefault(
-                    u => u.TechnicienId == demoTechnicien.Id);
-
-        if (demoAccount == null)
-        {
-            var demoPassword =
-                builder.Configuration["DemoTechnician:DefaultPassword"]
-                ?? builder.Configuration["DemoTechnicien:DefaultPassword"]
-                ?? Environment.GetEnvironmentVariable("DEMO_TECHNICIAN_PASSWORD")
-                ?? Environment.GetEnvironmentVariable("DEMO_TECH_PASSWORD");
-
-            if (string.IsNullOrWhiteSpace(demoPassword))
-            {
-                throw new InvalidOperationException(
-                    "DemoTechnician:DefaultPassword (ou DemoTechnicien:DefaultPassword / DEMO_TECHNICIAN_PASSWORD) est requis en développement.");
-            }
-
-            var hasher =
-                new Microsoft.AspNetCore.Identity.PasswordHasher<Utilisateur>();
-
-            demoAccount = new Utilisateur
-            {
-                Email = demoTechnicien.Email,
-                Role = "Technicien",
-                TechnicienId = demoTechnicien.Id,
-                DateCreation = DateTime.UtcNow
-            };
-
-            demoAccount.PasswordHash =
-                hasher.HashPassword(demoAccount, demoPassword);
-
-            dbContext.Utilisateurs.Add(demoAccount);
-            dbContext.SaveChanges();
-        }
-    }
 }
 
 
-// ============================================================
 // HTTP Pipeline
-// ============================================================
 
 if (app.Environment.IsDevelopment())
 {
@@ -437,9 +324,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 
-// ============================================================
 // Health Check
-// ============================================================
 
 app.MapGet("/health", () =>
     Results.Ok(new
