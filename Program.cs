@@ -30,7 +30,6 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 
 builder.Services.AddScoped<ScoringService>();
 builder.Services.AddScoped<ExcelImportService>();
-builder.Services.AddScoped<SmartExcelImportService>();
 builder.Services.AddScoped<PdfExportService>();
 builder.Services.AddScoped<CsvExportService>();
 

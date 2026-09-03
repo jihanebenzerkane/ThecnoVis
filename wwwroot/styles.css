@@ -1,26 +1,31 @@
 /* ==========================================================================
-   TechnoVIS â Design System
-   Inspired by Apple.com: generous whitespace, confident typography,
-   restrained color, intentional hierarchy. No decoration for decoration's sake.
+   TechnoVIS -- Design System ("Blueprint")
+   Generous whitespace, confident typography, intentional hierarchy.
+   Accent is blueprint blue -- the color of engineering schematics --
+   used sparingly. Plex Mono carries technical/numeric data (serials,
+   scores, timestamps) the way a spec sheet would; Inter carries
+   interface language. Matches wwwroot/import-global.html.
    ========================================================================== */
 
-/* Google Fonts â Inter */
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&display=swap');
+/* Google Fonts -- Inter + IBM Plex Mono */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
 /* âCSS Tokens â*/
 :root {
   --white:        #ffffff;
-  --bg:           #f5f5f7;     /* Apple's signature off-white section fill */
+  --bg:           #f5f5f7;     /* off-white section fill */
   --surface:      #ffffff;
-  --border:       #d2d2d7;     /* Apple's border color */
+  --bg-card:      var(--surface);
+  --border:       #d2d2d7;
   --border-light: #e8e8ed;
 
-  --text-primary:   #1d1d1f;   /* Apple's near-black */
-  --text-secondary: #6e6e73;   /* Apple's secondary text */
+  --text-primary:   #1d1d1f;   /* near-black */
+  --text-secondary: #6e6e73;   /* secondary text */
   --text-muted:     #a1a1a6;
 
-  --accent:       #0d9488;     /* ECS teal â used sparingly */
-  --accent-hover: #0f766e;
+  --accent:       #0b5fa6;     /* blueprint blue -- used sparingly */
+  --accent-hover: #094a82;
+  --accent-soft:  #e6f0f8;
 
   --danger:  #ff3b30;
   --warning: #ff9500;
@@ -33,6 +38,7 @@
   --r-lg: 18px;
 
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
 
   /* Typography scale */
   --text-xs:   0.75rem;   /* 12px */
@@ -322,9 +328,10 @@ html, body {
 }
 
 .metric-value {
+  font-family: var(--font-mono);
   font-size: var(--text-4xl);
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1;
   color: var(--text-primary);
   margin-top: 8px;
@@ -453,6 +460,7 @@ html, body {
 .score-low  { background: var(--success); }
 
 .score-number {
+  font-family: var(--font-mono);
   font-size: var(--text-sm);
   font-weight: 600;
   min-width: 30px;
@@ -684,7 +692,7 @@ html, body {
 }
 
 .calendar-day:hover {
-  background: rgba(13, 148, 136, 0.03);
+  background: rgba(11, 95, 166, 0.03);
 }
 
 .calendar-day.empty {
@@ -718,7 +726,7 @@ html, body {
 }
 
 .calendar-day.today {
-  background: rgba(13, 148, 136, 0.04);
+  background: rgba(11, 95, 166, 0.04);
 }
 
 .event-chip {
@@ -739,7 +747,7 @@ html, body {
 }
 
 .event-chip.badge-planifiee {
-  background: rgba(13, 148, 136, 0.1);
+  background: rgba(11, 95, 166, 0.1);
   color: var(--accent);
   border-left: 2.5px solid var(--accent);
 }
@@ -933,7 +941,7 @@ body.sidebar-collapsed .status-indicator {
   transition: box-shadow 0.18s ease, transform 0.18s ease;
 }
 .metric-card-clickable:hover {
-  box-shadow: 0 4px 20px rgba(13, 148, 136, 0.12);
+  box-shadow: 0 4px 20px rgba(11, 95, 166, 0.12);
   transform: translateY(-2px);
   z-index: 1;
 }
@@ -1315,7 +1323,7 @@ body.sidebar-collapsed .status-indicator {
 }
 
 .auth-tab-btn.active {
-  background: rgba(13, 148, 136, 0.1);
+  background: rgba(11, 95, 166, 0.1);
   color: var(--accent);
 }
 
@@ -1402,8 +1410,8 @@ body.sidebar-collapsed .status-indicator {
   width: 52px;
   height: 52px;
   margin: 0 auto 16px;
-  background: rgba(13, 148, 136, 0.08);
-  border: 1px solid rgba(13, 148, 136, 0.2);
+  background: rgba(11, 95, 166, 0.08);
+  border: 1px solid rgba(11, 95, 166, 0.2);
   border-radius: 14px;
   display: flex;
   align-items: center;
@@ -1501,7 +1509,7 @@ body.sidebar-collapsed .status-indicator {
 .auth-input:focus {
   border-color: var(--accent);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+  box-shadow: 0 0 0 3px rgba(11, 95, 166, 0.15);
   background: var(--surface);
 }
 
@@ -1576,4 +1584,3 @@ body.sidebar-collapsed .status-indicator {
   border-top: 1px solid var(--border-light);
   padding-top: 16px;
 }
-

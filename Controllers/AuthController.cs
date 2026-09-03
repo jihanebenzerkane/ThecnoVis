@@ -25,6 +25,9 @@ public class AuthController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly ILogger<AuthController> _logger;
 
+    // OTP is valid for 10 minutes.
+    private static readonly TimeSpan OtpExpiry = TimeSpan.FromMinutes(10);
+
     public AuthController(
         AppDbContext context,
         IEmailService emailService,
@@ -37,7 +40,8 @@ public class AuthController : ControllerBase
 
 
     // ============================================================
-    // 1. LOGIN (Cookie Authentication)
+    // 1. LOGIN — STEP 1 (Email + Password)
+    //    Returns a temp token for MFA step-2 instead of signing in.
     // ============================================================
 
     [HttpPost("login")]
@@ -83,29 +87,30 @@ public class AuthController : ControllerBase
         }
 
         var passwordHasher = new PasswordHasher<Utilisateur>();
-PasswordVerificationResult verificationResult;
+        PasswordVerificationResult verificationResult;
 
-try
-{
-    verificationResult = passwordHasher.VerifyHashedPassword(
-        user,
-        user.PasswordHash,
-        model.Password
-    );
-}
-catch (Exception ex)
-{
-    _logger.LogError(
-        ex,
-        "Hash de mot de passe invalide pour l'utilisateur {Email}.",
-        user.Email
-    );
+        try
+        {
+            verificationResult = passwordHasher.VerifyHashedPassword(
+                user,
+                user.PasswordHash,
+                model.Password
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Hash de mot de passe invalide pour l'utilisateur {Email}.",
+                user.Email
+            );
 
-    return Unauthorized(new
-    {
-        message = "Identifiant ou mot de passe incorrect."
-    });
-}
+            return Unauthorized(new
+            {
+                message = "Identifiant ou mot de passe incorrect."
+            });
+        }
+
         if (verificationResult == PasswordVerificationResult.Failed)
         {
             _logger.LogWarning("Tentative de connexion échouée : mot de passe invalide pour {Identifier}.", identifier);
@@ -114,6 +119,89 @@ catch (Exception ex)
                 message = "Identifiant ou mot de passe incorrect."
             });
         }
+
+        // Step-1 credentials verified — issue MFA challenge instead of signing in.
+        var tempToken = await IssueMfaChallengeAsync(user);
+
+        _logger.LogInformation(
+            "Étape 1 validée pour {Email}. Code OTP envoyé, en attente de la vérification MFA.",
+            user.Email);
+
+        return Ok(new
+        {
+            requiresMfa = true,
+            tempToken,
+            maskedEmail = MaskEmail(user.Email),
+            message = "Un code de vérification a été envoyé à votre adresse e-mail."
+        });
+    }
+
+
+    // ============================================================
+    // 2. VERIFY OTP — STEP 2 (MFA code verification)
+    //    On success, sets the auth cookie and returns the user payload.
+    // ============================================================
+
+    [HttpPost("verify-otp")]
+    [AllowAnonymous]
+    [EnableRateLimiting("LoginPolicy")]
+    public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpDto model)
+    {
+        if (string.IsNullOrWhiteSpace(model.TempToken) || string.IsNullOrWhiteSpace(model.Code))
+        {
+            return BadRequest(new { message = "Token temporaire et code requis." });
+        }
+
+        // Normalize: strip spaces/dashes the user might have typed
+        var rawCode = model.Code.Trim().Replace(" ", "").Replace("-", "");
+
+        if (rawCode.Length != 6 || !rawCode.All(char.IsDigit))
+        {
+            return BadRequest(new { message = "Le code doit être composé de 6 chiffres." });
+        }
+
+        var codeHash = HashValue(rawCode);
+
+        var otpRecord = await _context.OtpCodes
+            .Include(o => o.Utilisateur)
+                .ThenInclude(u => u.Technicien)
+            .FirstOrDefaultAsync(o =>
+                o.TempToken == model.TempToken &&
+                o.CodeHash == codeHash &&
+                o.UsedAt == null &&
+                o.ExpiresAt > DateTime.UtcNow);
+
+        if (otpRecord == null)
+        {
+            // Check if the token exists but the code is expired or wrong
+            var tokenExists = await _context.OtpCodes
+                .AnyAsync(o => o.TempToken == model.TempToken && o.UsedAt == null);
+
+            if (tokenExists)
+            {
+                // Token is valid but code is wrong or expired
+                var expired = await _context.OtpCodes
+                    .AnyAsync(o => o.TempToken == model.TempToken && o.ExpiresAt <= DateTime.UtcNow);
+
+                return Unauthorized(new
+                {
+                    message = expired
+                        ? "Le code de vérification a expiré. Veuillez en demander un nouveau."
+                        : "Code de vérification incorrect."
+                });
+            }
+
+            return Unauthorized(new
+            {
+                message = "Session expirée. Veuillez recommencer la connexion."
+            });
+        }
+
+        // Mark OTP as used
+        otpRecord.UsedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var user = otpRecord.Utilisateur;
 
         var nomComplet = user.Role == "Technicien" && user.Technicien != null
             ? $"{user.Technicien.Prenom} {user.Technicien.Nom}".Trim()
@@ -131,14 +219,10 @@ catch (Exception ex)
         };
 
         if (user.TechnicienId.HasValue)
-        {
             claims.Add(new Claim("TechnicienId", user.TechnicienId.Value.ToString()));
-        }
 
         if (user.Technicien != null && !string.IsNullOrWhiteSpace(user.Technicien.Matricule))
-        {
             claims.Add(new Claim("Matricule", user.Technicien.Matricule));
-        }
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
@@ -156,7 +240,7 @@ catch (Exception ex)
             principal,
             authProperties);
 
-        _logger.LogInformation("Connexion réussie pour {Email} ({Role}).", user.Email, user.Role);
+        _logger.LogInformation("MFA vérifié — connexion réussie pour {Email} ({Role}).", user.Email, user.Role);
 
         return Ok(new
         {
@@ -176,7 +260,61 @@ catch (Exception ex)
 
 
     // ============================================================
-    // 2. LOGOUT
+    // 3. RESEND OTP
+    //    Generates a fresh OTP for the same temp session.
+    // ============================================================
+
+    [HttpPost("resend-otp")]
+    [AllowAnonymous]
+    [EnableRateLimiting("LoginPolicy")]
+    public async Task<IActionResult> ResendOtp([FromBody] ResendOtpDto model)
+    {
+        if (string.IsNullOrWhiteSpace(model.TempToken))
+        {
+            return BadRequest(new { message = "Token temporaire requis." });
+        }
+
+        // Find the most recent unused OTP for this temp token
+        var existing = await _context.OtpCodes
+            .Include(o => o.Utilisateur)
+            .Where(o => o.TempToken == model.TempToken && o.UsedAt == null)
+            .OrderByDescending(o => o.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (existing == null)
+        {
+            return BadRequest(new
+            {
+                message = "Session introuvable ou expirée. Veuillez recommencer la connexion."
+            });
+        }
+
+        // Invalidate old OTP records for this user (mark as used so they can't be replayed)
+        var oldRecords = await _context.OtpCodes
+            .Where(o => o.UtilisateurId == existing.UtilisateurId && o.UsedAt == null)
+            .ToListAsync();
+
+        foreach (var r in oldRecords)
+            r.UsedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        // Issue a fresh OTP with the same temp token (reused for frontend state)
+        var newTempToken = await IssueMfaChallengeAsync(existing.Utilisateur, model.TempToken);
+
+        _logger.LogInformation("Code OTP renvoyé pour {Email}.", existing.Utilisateur.Email);
+
+        return Ok(new
+        {
+            tempToken = newTempToken,
+            maskedEmail = MaskEmail(existing.Utilisateur.Email),
+            message = "Un nouveau code de vérification a été envoyé."
+        });
+    }
+
+
+    // ============================================================
+    // 4. LOGOUT
     // ============================================================
 
     [HttpPost("logout")]
@@ -189,7 +327,7 @@ catch (Exception ex)
 
 
     // ============================================================
-    // 3. CURRENT USER (ME)
+    // 5. CURRENT USER (ME)
     // ============================================================
 
     [HttpGet("me")]
@@ -233,7 +371,7 @@ catch (Exception ex)
 
 
     // ============================================================
-    // 4. FORGOT PASSWORD (Token cryptographique + Hash SHA-256 + Email)
+    // 6. FORGOT PASSWORD (Token cryptographique + Hash SHA-256 + Email)
     // ============================================================
 
     [HttpPost("forgot-password")]
@@ -262,7 +400,7 @@ catch (Exception ex)
 
         // Générer 32 octets aléatoires cryptographiquement sûrs
         var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        var tokenHash = HashToken(rawToken);
+        var tokenHash = HashValue(rawToken);
 
         var resetToken = new PasswordResetToken
         {
@@ -290,7 +428,7 @@ catch (Exception ex)
 
 
     // ============================================================
-    // 5. RESET PASSWORD (Vérification Hash + Nouveau mot de passe)
+    // 7. RESET PASSWORD (Vérification Hash + Nouveau mot de passe)
     // ============================================================
 
     [HttpPost("reset-password")]
@@ -323,7 +461,7 @@ catch (Exception ex)
             });
         }
 
-        var tokenHash = HashToken(model.Token.Trim());
+        var tokenHash = HashValue(model.Token.Trim());
 
         var tokenRecord = await _context.PasswordResetTokens
             .Include(t => t.Utilisateur)
@@ -356,7 +494,7 @@ catch (Exception ex)
 
 
     // ============================================================
-    // 6. CHANGE PASSWORD (Utilisateur authentifié)
+    // 8. CHANGE PASSWORD (Utilisateur authentifié)
     // ============================================================
 
     [HttpPost("change-password")]
@@ -401,12 +539,75 @@ catch (Exception ex)
 
 
     // ============================================================
-    // Helpers
+    // Private Helpers
     // ============================================================
 
-    private static string HashToken(string token)
+    /// <summary>
+    /// Generates a 6-digit OTP, stores its hash in the database, sends it by email.
+    /// Returns the temp token that the browser needs to submit at step-2.
+    /// If <paramref name="reuseTempToken"/> is provided, it is stored instead of generating a new one.
+    /// </summary>
+    private async Task<string> IssueMfaChallengeAsync(Utilisateur user, string? reuseTempToken = null)
     {
-        var bytes = Encoding.UTF8.GetBytes(token.Trim().ToLowerInvariant());
+        // 6-digit numeric code — e.g. "483921"
+        var rawCode = RandomNumberGenerator.GetInt32(100_000, 999_999 + 1).ToString("D6");
+        var codeHash = HashValue(rawCode);
+
+        // Opaque 32-byte random token for the browser session
+        var tempToken = reuseTempToken ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+
+        var otp = new OtpCode
+        {
+            UtilisateurId = user.Id,
+            CodeHash = codeHash,
+            TempToken = tempToken,
+            ExpiresAt = DateTime.UtcNow.Add(OtpExpiry),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.OtpCodes.Add(otp);
+        await _context.SaveChangesAsync();
+
+        // Send via email — also log to console as a development fallback
+        _logger.LogInformation("[MFA] Code OTP pour {Email} : {Code} (expire dans {Min} min)",
+            user.Email, rawCode, (int)OtpExpiry.TotalMinutes);
+
+        try
+        {
+            var subject = "TechnoVIS — Code de vérification";
+            var body = $@"
+<div style=""font-family:Inter,sans-serif;max-width:480px;margin:0 auto;"">
+  <h2 style=""color:#0f172a;font-size:20px;margin-bottom:8px;"">Code de vérification TechnoVIS</h2>
+  <p style=""color:#475569;font-size:14px;"">Utilisez le code ci-dessous pour finaliser votre connexion. Il est valable <strong>{(int)OtpExpiry.TotalMinutes} minutes</strong>.</p>
+  <div style=""background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:28px;text-align:center;margin:20px 0;"">
+    <span style=""font-size:40px;font-weight:700;letter-spacing:12px;color:#0f172a;font-family:monospace;"">{rawCode}</span>
+  </div>
+  <p style=""color:#94a3b8;font-size:12px;"">Si vous n'avez pas demandé ce code, ignorez cet e-mail. Votre compte reste sécurisé.</p>
+</div>";
+            await _emailService.SendEmailAsync(user.Email, subject, body);
+        }
+        catch (Exception ex)
+        {
+            // Don't fail the whole flow if email sending fails — the code is still logged
+            _logger.LogWarning(ex, "Envoi d'e-mail OTP échoué pour {Email}. Code disponible dans les logs.", user.Email);
+        }
+
+        return tempToken;
+    }
+
+    private static string MaskEmail(string email)
+    {
+        var at = email.IndexOf('@');
+        if (at <= 1) return email;
+        var local = email[..at];
+        var domain = email[at..];
+        var visible = local.Length <= 2 ? local : local[..2];
+        return $"{visible}{"*".PadRight(Math.Min(local.Length - 2, 5), '*')}{domain}";
+    }
+
+    private static string HashValue(string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value.Trim().ToLowerInvariant());
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
@@ -422,6 +623,17 @@ public class LoginDto
     public string? Identifier { get; set; }
     public string? Email { get; set; }
     public string Password { get; set; } = string.Empty;
+}
+
+public class VerifyOtpDto
+{
+    public string TempToken { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+}
+
+public class ResendOtpDto
+{
+    public string TempToken { get; set; } = string.Empty;
 }
 
 public class ForgotPasswordDto

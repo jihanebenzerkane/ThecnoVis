@@ -25,6 +25,7 @@ public class AppDbContext : DbContext
     public DbSet<ApplicationSetting> ApplicationSettings
         => Set<ApplicationSetting>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -76,6 +77,16 @@ public class AppDbContext : DbContext
             .HasOne(t => t.Utilisateur)
             .WithMany()
             .HasForeignKey(t => t.UtilisateurId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<OtpCode>()
+            .HasIndex(o => o.TempToken)
+            .IsUnique();
+
+        modelBuilder.Entity<OtpCode>()
+            .HasOne(o => o.Utilisateur)
+            .WithMany()
+            .HasForeignKey(o => o.UtilisateurId)
             .OnDelete(DeleteBehavior.Cascade);
 
 

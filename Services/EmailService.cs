@@ -119,5 +119,53 @@ Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet e-mai
                 _logger.LogError(ex, "Échec lors de l'envoi de l'e-mail de réinitialisation à {ToEmail}.", toEmail);
             }
         }
+
+        public async Task SendEmailAsync(string toEmail, string subject, string htmlBody)
+        {
+            var host = _configuration["Smtp:Host"];
+            var portString = _configuration["Smtp:Port"];
+            var user = _configuration["Smtp:User"];
+            var pass = _configuration["Smtp:Password"];
+            var from = _configuration["Smtp:From"] ?? "no-reply@technovis.ma";
+            var enableSsl = bool.TryParse(_configuration["Smtp:EnableSsl"], out var ssl) && ssl;
+
+            if (string.IsNullOrWhiteSpace(host))
+            {
+                _logger.LogInformation(
+                    "[EmailService DEV] E-mail non envoyé (SMTP non configuré). Sujet : {Subject} → {ToEmail}",
+                    subject, toEmail);
+                return;
+            }
+
+            try
+            {
+                int port = int.TryParse(portString, out var p) ? p : 587;
+                using var client = new SmtpClient(host, port)
+                {
+                    EnableSsl = enableSsl,
+                    Credentials = !string.IsNullOrWhiteSpace(user)
+                        ? new NetworkCredential(user, pass)
+                        : null
+                };
+
+                using var mailMessage = new MailMessage
+                {
+                    From = new MailAddress(from, "TechnoVIS"),
+                    Subject = subject,
+                    Body = htmlBody,
+                    IsBodyHtml = true
+                };
+
+                mailMessage.To.Add(toEmail);
+                await client.SendMailAsync(mailMessage);
+
+                _logger.LogInformation("E-mail '{Subject}' envoyé avec succès à {ToEmail}.", subject, toEmail);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Échec de l'envoi de l'e-mail '{Subject}' à {ToEmail}.", subject, toEmail);
+                throw; // Let caller handle (AuthController catches and logs gracefully)
+            }
+        }
     }
 }
